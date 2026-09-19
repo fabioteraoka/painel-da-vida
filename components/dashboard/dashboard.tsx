@@ -46,7 +46,11 @@ type BillApi = {
   sourceUrl: string | null;
   paymentAccount: { id: string; name: string; type: string } | null;
   responsibleType: "ME" | "OTHER" | "UNKNOWN";
+  responsibleName: string | null;
   responsiblePerson: { id: string; name: string; relation: string | null } | null;
+  paymentUrl: string | null;
+  pixCode: string | null;
+  barcode: string | null;
 };
 
 type PaymentAccountApi = {
@@ -72,11 +76,20 @@ type ApiTask = {
   dueAt: string | null;
   status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
   completedAt: string | null;
+  bill?: {
+    id: string;
+    merchant: string | null;
+    amount: number | null;
+    dueDate: string | null;
+    status: "NEEDS_REVIEW" | "CONFIRMED" | "SCHEDULED" | "PAID" | "IGNORED";
+    sourceUrl: string | null;
+  } | null;
 };
 
 type DashboardTask = Omit<Task, "id" | "priority"> & {
   id: string;
   priority: Task["priority"];
+  bill?: ApiTask["bill"];
 };
 
 function mapApiTask(task: ApiTask): DashboardTask {
@@ -92,6 +105,7 @@ function mapApiTask(task: ApiTask): DashboardTask {
           : "Média",
     due: formatDueDate(task.dueAt),
     completed: task.status === "COMPLETED",
+    bill: task.bill,
   };
 }
 
@@ -290,6 +304,7 @@ export default function Dashboard() {
   const openBills = bills.filter((bill) => bill.status !== "PAID");
   const overdueBills = openBills.filter((bill) => bill.dueDate && new Date(bill.dueDate) < new Date());
   const billTotal = openBills.reduce((sum, bill) => sum + (bill.amount ?? 0), 0);
+  const billTasks = tasks.filter((task) => !!task.bill);
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
@@ -442,6 +457,8 @@ export default function Dashboard() {
                           if (!response.ok) throw new Error(data.error ?? "Não foi possível verificar o Gmail.");
                           const billsResponse = await fetch("/api/bills", { cache: "no-store" });
                           if (billsResponse.ok) setBills((await billsResponse.json()) as BillApi[]);
+                          const tasksResponse = await fetch("/api/tasks", { cache: "no-store" });
+                          if (tasksResponse.ok) setTasks((await tasksResponse.json() as ApiTask[]).map(mapApiTask));
                           setBillMessage(data.detected > 0 ? data.detected + " conta(s) encontrada(s)." : "Nenhuma conta nova encontrada.");
                         } catch (error) {
                           setBillMessage(error instanceof Error ? error.message : "Falha ao verificar o Gmail.");
@@ -562,6 +579,11 @@ export default function Dashboard() {
                     }
                   >
                     <div>
+                      {billTasks.length > 0 && (
+                        <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                          {billTasks.filter((task) => !task.completed).length} conta(s) aguardando pagamento — a tarefa é criada automaticamente até 10 dias antes do vencimento.
+                        </div>
+                      )}
                       {tasks.map((task) => (
                         <TaskRow
                           key={task.id}
@@ -813,7 +835,7 @@ function TaskRow({
         >
           {task.title}
         </p>
-        <p className="truncate text-xs text-slate-400">{task.description}</p>
+        <p className="truncate text-xs text-slate-400">{task.bill ? "Conta a pagar" + (task.bill.merchant ? " · " + task.bill.merchant : "") : task.description}</p>
       </div>
 
       <span className="hidden rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500 sm:block">
@@ -855,6 +877,15 @@ function BillRow({
               {due ? "Vencimento " + due.toLocaleDateString("pt-BR") : "Vencimento não identificado"}
             </span>
             {bill.amount !== null && <span className="font-semibold text-slate-700">R$ {bill.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
+            <span className="text-slate-500">
+              {bill.responsibleType === "ME"
+                ? "Em seu nome"
+                : bill.responsiblePerson
+                  ? "De " + bill.responsiblePerson.name
+                  : bill.responsibleType === "OTHER" && bill.responsibleName
+                    ? "Outra pessoa: " + bill.responsibleName
+                    : "Responsável não definido"}
+            </span>
           </div>
         </div>
         <select
@@ -884,7 +915,24 @@ function BillRow({
           <option value="SCHEDULED">Programada</option>
           <option value="PAID">Paga</option>
         </select>
-        {bill.sourceUrl && <a href={bill.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-indigo-600">E-mail</a>}
+        <div className="flex items-center gap-2">
+          {bill.paymentUrl && (
+            <a href={bill.paymentUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">
+              Pagar
+            </a>
+          )}
+          {bill.pixCode && (
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(bill.pixCode!)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              Copiar PIX
+            </button>
+          )}
+          {bill.barcode && (
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(bill.barcode!)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              Copiar código
+            </button>
+          )}
+          {bill.sourceUrl && <a href={bill.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-indigo-600">E-mail</a>}
+        </div>
       </div>
     </div>
   );
