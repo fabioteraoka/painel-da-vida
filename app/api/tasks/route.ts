@@ -65,6 +65,18 @@ export async function GET() {
 
     const tasks = await prisma.task.findMany({
       where: { userId: user.id },
+      include: {
+        bill: {
+          select: {
+            id: true,
+            merchant: true,
+            amount: true,
+            dueDate: true,
+            status: true,
+            sourceUrl: true,
+          },
+        },
+      },
       orderBy: [{ completedAt: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
     });
 
