@@ -99,8 +99,10 @@ export default function Dashboard() {
   const [databaseError, setDatabaseError] = useState(false);
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
+  const [calendarError, setCalendarError] = useState(false);
   const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
   const [gmailLoading, setGmailLoading] = useState(true);
+  const [gmailError, setGmailError] = useState(false);
 
   useEffect(() => {
     setToday(new Date());
@@ -137,9 +139,10 @@ export default function Dashboard() {
         const data = (await response.json()) as { items?: CalendarApiEvent[] };
         if (!cancelled) {
           setRealCalendarEvents(data.items ?? []);
+          setCalendarError(false);
         }
       } catch {
-        // Integração indisponível: mantemos a agenda vazia e exibimos o estado de fallback.
+        if (!cancelled) setCalendarError(true);
       } finally {
         if (!cancelled) setCalendarLoading(false);
       }
@@ -157,9 +160,10 @@ export default function Dashboard() {
         const data = (await response.json()) as { messages?: GmailApiMessage[] };
         if (!cancelled) {
           setGmailMessages(data.messages ?? []);
+          setGmailError(false);
         }
       } catch {
-        // Integração indisponível: mantemos os e-mails vazios e exibimos o estado de fallback.
+        if (!cancelled) setGmailError(true);
       } finally {
         if (!cancelled) setGmailLoading(false);
       }
@@ -342,12 +346,17 @@ export default function Dashboard() {
                   title="Agenda de hoje"
                   icon={<CalendarDays size={18} />}
                   action="Ver agenda"
+                  actionHref="https://calendar.google.com/calendar/u/0/r/day"
                 >
                   <div className="divide-y divide-slate-100">
                     {calendarLoading ? (
                       <p className="py-4 text-sm text-slate-400">Carregando agenda...</p>
                     ) : realCalendarEvents.length === 0 ? (
-                      <p className="py-4 text-sm text-slate-400">Nenhum compromisso para o restante do dia.</p>
+                      <p className="py-4 text-sm text-slate-400">
+                        {calendarError
+                          ? "Não foi possível carregar o Google Calendar."
+                          : "Nenhum compromisso para hoje."}
+                      </p>
                     ) : (
                       realCalendarEvents.map((event) => {
                         const start = event.start?.dateTime ? new Date(event.start.dateTime) : null;
@@ -398,12 +407,17 @@ export default function Dashboard() {
                     title="E-mails importantes"
                     icon={<Mail size={18} />}
                     action="Abrir Gmail"
+                    actionHref="https://mail.google.com/mail/u/0/#inbox"
                   >
                     <div className="space-y-2">
                       {gmailLoading ? (
                         <p className="py-3 text-sm text-slate-400">Carregando Gmail...</p>
                       ) : gmailMessages.length === 0 ? (
-                        <p className="py-3 text-sm text-slate-400">Nenhum e-mail recente encontrado.</p>
+                        <p className="py-3 text-sm text-slate-400">
+                        {gmailError
+                          ? "Não foi possível carregar o Gmail."
+                          : "Nenhum e-mail recente encontrado."}
+                      </p>
                       ) : (
                         gmailMessages.slice(0, 8).map((message) => {
                           const headers = message.payload?.headers ?? [];
@@ -567,6 +581,7 @@ function Card({
   title: string;
   icon: React.ReactNode;
   action?: string;
+  actionHref?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -577,10 +592,22 @@ function Card({
           <h2 className="font-semibold text-slate-900">{title}</h2>
         </div>
         {action && (
-          <button className="flex items-center gap-1 text-xs font-medium text-indigo-600">
-            {action}
-            <ChevronRight size={14} />
-          </button>
+          actionHref ? (
+            <a
+              href={actionHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+            >
+              {action}
+              <ChevronRight size={14} />
+            </a>
+          ) : (
+            <button className="flex items-center gap-1 text-xs font-medium text-indigo-600">
+              {action}
+              <ChevronRight size={14} />
+            </button>
+          )
         )}
       </div>
       {children}
