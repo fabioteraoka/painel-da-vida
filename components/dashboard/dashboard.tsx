@@ -415,10 +415,10 @@ export default function Dashboard() {
                         <p className="py-3 text-sm text-slate-400">Carregando Gmail...</p>
                       ) : gmailMessages.length === 0 ? (
                         <p className="py-3 text-sm text-slate-400">
-                        {gmailError
-                          ? "Não foi possível carregar o Gmail."
-                          : "{gmailError ? "Não foi possível carregar o Gmail." : "Nenhum e-mail recente encontrado."}"}
-                      </p>
+                          {gmailError
+                            ? "Não foi possível carregar o Gmail."
+                            : "Nenhum e-mail recente encontrado."}
+                        </p>
                       ) : (
                         gmailMessages.slice(0, 8).map((message) => {
                           const headers = message.payload?.headers ?? [];
