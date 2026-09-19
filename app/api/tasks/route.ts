@@ -6,18 +6,14 @@ import { initialTasks } from "@/lib/mock-data";
 async function getCurrentUser() {
   const session = await auth();
   const email = session?.user?.email;
+  const name = session?.user?.name ?? null;
 
   if (!email) return null;
 
   return prisma.user.upsert({
     where: { email },
-    update: {
-      name: session.user.name ?? undefined,
-    },
-    create: {
-      email,
-      name: session.user.name ?? null,
-    },
+    update: { name },
+    create: { email, name },
   });
 }
 
