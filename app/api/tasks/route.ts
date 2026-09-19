@@ -65,6 +65,7 @@ export async function GET() {
 
     const tasks = await prisma.task.findMany({
       where: { userId: user.id },
+      orderBy: [{ completedAt: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
       include: {
         bill: {
           select: {
@@ -80,8 +81,6 @@ export async function GET() {
           },
         },
       },
-      orderBy: [{ completedAt: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
-      include: { bill: { select: { merchant: true } } },
     });
 
     return NextResponse.json(tasks);
