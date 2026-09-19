@@ -577,6 +577,7 @@ function Card({
   title,
   icon,
   action,
+  actionHref,
   children,
 }: {
   title: string;
