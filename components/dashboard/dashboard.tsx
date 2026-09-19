@@ -50,11 +50,11 @@ type BillApi = {
   barcode: string | null;
   responsibleName: string | null;
   responsibleType: "ME" | "OTHER" | "UNKNOWN";
-  responsibleName: string | null;
+
   responsiblePerson: { id: string; name: string; relation: string | null } | null;
-  paymentUrl: string | null;
-  pixCode: string | null;
-  barcode: string | null;
+
+
+
 };
 
 type PaymentAccountApi = {
