@@ -55,6 +55,7 @@ export async function scanForUser(userId:string){
       const result=await classifyBillEmail({from:header(full,"From"),subject:header(full,"Subject"),snippet:full.snippet,body:textPart(full.payload),userName:user.name ?? undefined});
       if(!result.isBill||result.confidence<0.65)continue;
       let responsiblePersonId: string | null = null;
+      const responsibleType = result.responsibleType;
       if (result.responsibleName) {
         const person = await prisma.person.findFirst({
           where: { userId, active: true, name: { contains: result.responsibleName, mode: "insensitive" } },
@@ -65,7 +66,7 @@ export async function scanForUser(userId:string){
       const dueDate=result.dueDate&&/^\d{4}-\d{2}-\d{2}$/.test(result.dueDate)?new Date(result.dueDate+"T12:00:00"):null;
       await prisma.bill.upsert({
         where:{userId_externalEmailId:{userId,externalEmailId:full.id}},
-        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
+        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,responsibleType,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
         create:{userId,externalEmailId:full.id,threadId:full.threadId??null,sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id}
       });
       detected++;
