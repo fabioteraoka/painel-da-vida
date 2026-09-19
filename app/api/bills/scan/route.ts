@@ -65,7 +65,7 @@ export async function scanForUser(userId:string){
       const dueDate=result.dueDate&&/^\d{4}-\d{2}-\d{2}$/.test(result.dueDate)?new Date(result.dueDate+"T12:00:00"):null;
       await prisma.bill.upsert({
         where:{userId_externalEmailId:{userId,externalEmailId:full.id}},
-        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
+        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
         create:{userId,externalEmailId:full.id,threadId:full.threadId??null,sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id}
       });
       detected++;
