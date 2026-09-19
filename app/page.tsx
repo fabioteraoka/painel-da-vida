@@ -1,2 +1,13 @@
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import Dashboard from "@/components/dashboard/dashboard";
-export default function Home(){ return <Dashboard />; }
+
+export default async function Home() {
+  const session = await auth();
+
+  if (!session?.user?.email) {
+    redirect("/login");
+  }
+
+  return <Dashboard />;
+}
