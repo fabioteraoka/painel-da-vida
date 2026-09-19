@@ -19,7 +19,7 @@ import {
   Target,
   X,
 } from "lucide-react";
-import { signIn, signOut } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import { alerts, calendarEvents, emails, initialTasks, type Task } from "@/lib/mock-data";
 
 type GmailApiMessage = {
@@ -99,9 +99,7 @@ export default function Dashboard() {
   const [databaseError, setDatabaseError] = useState(false);
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
-  const [calendarConnected, setCalendarConnected] = useState(false);
   const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
-  const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailLoading, setGmailLoading] = useState(true);
 
   useEffect(() => {
@@ -133,14 +131,12 @@ export default function Dashboard() {
       try {
         const response = await fetch("/api/calendar/events", { cache: "no-store" });
         if (response.status === 409 || response.status === 401) {
-          setCalendarConnected(false);
-          return;
+          throw new Error("Google Calendar não autorizado.");
         }
         if (!response.ok) throw new Error("Falha ao carregar agenda.");
         const data = (await response.json()) as { items?: CalendarApiEvent[] };
         if (!cancelled) {
           setRealCalendarEvents(data.items ?? []);
-          setCalendarConnected(true);
         }
       } catch {
         if (!cancelled) setCalendarConnected(false);
@@ -155,14 +151,12 @@ export default function Dashboard() {
       try {
         const response = await fetch("/api/gmail/messages", { cache: "no-store" });
         if (response.status === 409 || response.status === 401) {
-          setGmailConnected(false);
-          return;
+          throw new Error("Gmail não autorizado.");
         }
         if (!response.ok) throw new Error("Falha ao carregar Gmail.");
         const data = (await response.json()) as { messages?: GmailApiMessage[] };
         if (!cancelled) {
           setGmailMessages(data.messages ?? []);
-          setGmailConnected(true);
         }
       } catch {
         if (!cancelled) setGmailConnected(false);
@@ -223,10 +217,6 @@ export default function Dashboard() {
     ? Math.round((done / tasks.length) * 100)
     : 0;
 
-  const goToIntegration = (path: string) => {
-    window.location.href = path;
-  };
-
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
       <div className="flex min-h-screen">
@@ -271,20 +261,9 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => goToIntegration("/api/integrations/google-calendar/connect")}
-                className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:block"
-              >
-                {calendarConnected ? "Agenda conectada" : "Conectar Agenda"}
-              </button>
-              <button
-                type="button"
-                onClick={() => goToIntegration("/api/integrations/google-gmail/connect")}
-                className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 md:block"
-              >
-                {gmailConnected ? "Gmail conectado" : "Conectar Gmail"}
-              </button>
+              <span className="hidden rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 sm:block">
+                Google conectado
+              </span>
               <button className="relative rounded-xl p-2.5 text-slate-500">
                 <Bell size={19} />
                 <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-red-500" />
@@ -367,17 +346,6 @@ export default function Dashboard() {
                   <div className="divide-y divide-slate-100">
                     {calendarLoading ? (
                       <p className="py-4 text-sm text-slate-400">Carregando agenda...</p>
-                    ) : !calendarConnected ? (
-                      <div className="py-4">
-                        <p className="text-sm text-slate-500">Sua agenda do Google ainda não está conectada.</p>
-                        <button
-                          type="button"
-                          onClick={() => goToIntegration("/api/integrations/google-calendar/connect")}
-                          className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                        >
-                          Conectar Google Calendar
-                        </button>
-                      </div>
                     ) : realCalendarEvents.length === 0 ? (
                       <p className="py-4 text-sm text-slate-400">Nenhum compromisso para o restante do dia.</p>
                     ) : (
@@ -434,17 +402,6 @@ export default function Dashboard() {
                     <div className="space-y-2">
                       {gmailLoading ? (
                         <p className="py-3 text-sm text-slate-400">Carregando Gmail...</p>
-                      ) : !gmailConnected ? (
-                        <div className="py-3">
-                          <p className="text-sm text-slate-500">Seu Gmail ainda não está conectado.</p>
-                          <button
-                            type="button"
-                            onClick={() => goToIntegration("/api/integrations/google-gmail/connect")}
-                            className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                          >
-                            Conectar Gmail
-                          </button>
-                        </div>
                       ) : gmailMessages.length === 0 ? (
                         <p className="py-3 text-sm text-slate-400">Nenhum e-mail recente encontrado.</p>
                       ) : (
@@ -543,10 +500,14 @@ function SidebarContent() {
         </p>
         <Connection
           label="Google Calendar"
-          status="Não conectado"
-          color="bg-blue-500"
+          status="Conectado no login"
+          color="bg-emerald-500"
         />
-        <Connection label="Gmail" status="Não conectado" color="bg-red-500" />
+        <Connection
+          label="Gmail"
+          status="Conectado no login"
+          color="bg-emerald-500"
+        />
         <Connection
           label="Tarefas"
           status="PostgreSQL"
