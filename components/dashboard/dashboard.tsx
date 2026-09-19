@@ -279,7 +279,6 @@ export default function Dashboard() {
               <div ref={notificationsRef} className="relative">
                 <button type="button" onClick={() => setNotificationsOpen((open) => !open)} aria-label="Notificações" className="relative rounded-xl p-2.5 text-slate-500 hover:bg-slate-50">
                   <Bell size={19} />
-                  <Bell size={19} />
                   {notificationCount > 0 && <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{notificationCount}</span>}
                 </button>
                 {notificationsOpen && <div className="absolute right-0 top-12 z-50 w-[330px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
@@ -323,10 +322,7 @@ export default function Dashboard() {
                 <div className="grid grid-cols-3 gap-2">
                   <Stat value={realCalendarEvents.length} label="agenda" />
                   <Stat value={tasks.length - done} label="tarefas" />
-                  <Stat
-                    value={emails.filter((email) => email.unread).length}
-                    label="não lidos"
-                  />
+                  <Stat value={unreadEmails} label="não lidos" />
                 </div>
               </div>
             </section>
@@ -340,9 +336,7 @@ export default function Dashboard() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="font-semibold">Seu dia em 30 segundos</h2>
-                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      IA
-                    </span>
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">Resumo automático</span>
                   </div>
                   <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
                     {todayEventCount === 0 && pendingTasks.length === 0 && unreadEmails === 0
