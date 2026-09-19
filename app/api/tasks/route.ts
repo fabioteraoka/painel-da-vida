@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { initialTasks } from "@/lib/mock-data";
 
 const DEMO_EMAIL = "fabioteraoka@painel.local";
 
@@ -11,16 +12,59 @@ async function getDemoUser() {
   });
 }
 
+function dueDate(label: string) {
+  const date = new Date();
+  date.setHours(18, 0, 0, 0);
+
+  if (label === "Amanhã") {
+    date.setDate(date.getDate() + 1);
+  } else if (label === "Sexta") {
+    const daysUntilFriday = (5 - date.getDay() + 7) % 7 || 7;
+    date.setDate(date.getDate() + daysUntilFriday);
+  }
+
+  return date;
+}
+
+async function seedDemoTasks(userId: string) {
+  const count = await prisma.task.count({ where: { userId } });
+  if (count > 0) return;
+
+  await prisma.task.createMany({
+    data: initialTasks.map((task) => ({
+      title: task.title,
+      description: task.description ?? null,
+      priority:
+        task.priority === "Alta"
+          ? "HIGH"
+          : task.priority === "Baixa"
+            ? "LOW"
+            : "MEDIUM",
+      dueAt: dueDate(task.due),
+      status: task.completed ? "COMPLETED" : "PENDING",
+      completedAt: task.completed ? new Date() : null,
+      userId,
+    })),
+  });
+}
+
 export async function GET() {
   try {
     const user = await getDemoUser();
+    await seedDemoTasks(user.id);
+
     const tasks = await prisma.task.findMany({
       where: { userId: user.id },
       orderBy: [{ completedAt: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
     });
+
     return NextResponse.json(tasks);
-  } catch {
-    return NextResponse.json({ error: "Banco de dados não configurado." }, { status: 503 });
+  } catch (error) {
+    console.error("Tasks GET failed:", error);
+    return NextResponse.json(
+      { error: "Banco de dados não configurado." },
+      { status: 503 },
+    );
   }
 }
 
@@ -35,7 +79,10 @@ export async function POST(request: Request) {
     };
 
     if (!body.title?.trim()) {
-      return NextResponse.json({ error: "Título é obrigatório." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Título é obrigatório." },
+        { status: 400 },
+      );
     }
 
     const task = await prisma.task.create({
@@ -49,7 +96,11 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(task, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Não foi possível salvar a tarefa." }, { status: 503 });
+  } catch (error) {
+    console.error("Tasks POST failed:", error);
+    return NextResponse.json(
+      { error: "Não foi possível salvar a tarefa." },
+      { status: 503 },
+    );
   }
 }
