@@ -45,6 +45,10 @@ type BillApi = {
   confidence: number | null;
   sourceUrl: string | null;
   paymentAccount: { id: string; name: string; type: string } | null;
+  paymentUrl: string | null;
+  pixCode: string | null;
+  barcode: string | null;
+  responsibleName: string | null;
   responsibleType: "ME" | "OTHER" | "UNKNOWN";
   responsibleName: string | null;
   responsiblePerson: { id: string; name: string; relation: string | null } | null;
@@ -151,6 +155,9 @@ export default function Dashboard() {
   const [newAccountOpen, setNewAccountOpen] = useState(false);
   const [newAccountName, setNewAccountName] = useState("");
   const [newAccountType, setNewAccountType] = useState<PaymentAccountApi["type"]>("BANK_ACCOUNT");
+  const [newPersonOpen, setNewPersonOpen] = useState(false);
+  const [newPersonName, setNewPersonName] = useState("");
+  const [newPersonRelation, setNewPersonRelation] = useState("");
   const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -283,6 +290,8 @@ export default function Dashboard() {
       });
 
       if (!response.ok) throw new Error("Falha ao atualizar tarefa.");
+      const billsResponse = await fetch("/api/bills", { cache: "no-store" });
+      if (billsResponse.ok) setBills((await billsResponse.json()) as BillApi[]);
     } catch {
       setTasks((currentTasks) =>
         currentTasks.map((task) =>
@@ -482,7 +491,7 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {bills.slice(0, 8).map((bill) => (
+                      {bills.filter((bill) => bill.status !== "PAID").slice(0, 8).map((bill) => (
                         <BillRow
                           key={bill.id}
                           bill={bill}
@@ -494,7 +503,26 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  <div className="border-t border-slate-100 pt-3">
+                  <div className="border-t border-slate-100 pt-3 space-y-3">
+                    {!newPersonOpen ? (
+                      <button type="button" onClick={() => setNewPersonOpen(true)} className="flex items-center gap-2 text-xs font-semibold text-indigo-600">
+                        <Plus size={14} /> Cadastrar pessoa
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input value={newPersonName} onChange={(e) => setNewPersonName(e.target.value)} placeholder="Ex.: Carol" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                        <input value={newPersonRelation} onChange={(e) => setNewPersonRelation(e.target.value)} placeholder="Relação (opcional)" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                        <button type="button" onClick={async () => {
+                          if (!newPersonName.trim()) return;
+                          const response = await fetch("/api/people", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newPersonName, relation: newPersonRelation }) });
+                          if (response.ok) {
+                            const person = await response.json() as { id: string; name: string; relation: string | null };
+                            setPeople((items) => [...items, person]); setNewPersonName(""); setNewPersonRelation(""); setNewPersonOpen(false);
+                          }
+                        }} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Salvar</button>
+                      </div>
+                    )}
+
                     {!newAccountOpen ? (
                       <button type="button" onClick={() => setNewAccountOpen(true)} className="flex items-center gap-2 text-xs font-semibold text-indigo-600">
                         <Plus size={14} /> Cadastrar conta de pagamento
@@ -851,6 +879,7 @@ function TaskRow({
 function BillRow({
   bill,
   accounts,
+  people,
   onUpdated,
 }: {
   bill: BillApi;
@@ -866,8 +895,9 @@ function BillRow({
     const data = await response.json();
     onUpdated(data);
   }
+  const paymentCode = bill.pixCode ?? bill.barcode;
   return (
-    <div className="rounded-xl border border-slate-100 p-3">
+    <div className={`rounded-xl border p-3 ${overdue ? "border-red-200 bg-red-50/30" : "border-slate-100"}`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">{bill.merchant ?? bill.subject}</p>
@@ -931,7 +961,9 @@ function BillRow({
               Copiar código
             </button>
           )}
-          {bill.sourceUrl && <a href={bill.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-indigo-600">E-mail</a>}
+  {bill.paymentUrl && <a href={bill.paymentUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">Pagar</a>}
+        {paymentCode && <button type="button" onClick={() => void navigator.clipboard?.writeText(paymentCode)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">Copiar código</button>}
+        {bill.sourceUrl && <a href={bill.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-indigo-600">E-mail</a>}
         </div>
       </div>
     </div>
