@@ -2,12 +2,19 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { prisma } from "@/lib/prisma";
 
+const GOOGLE_CALENDAR_SCOPE =
+  "https://www.googleapis.com/auth/calendar.readonly";
+const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+
 export const { auth, handlers, signIn, signOut } = NextAuth({
   providers: [
     Google({
       authorization: {
         params: {
-          scope: "openid email profile",
+          scope: `openid email profile ${GOOGLE_CALENDAR_SCOPE} ${GMAIL_SCOPE}`,
+          access_type: "offline",
+          prompt: "consent",
+          include_granted_scopes: "true",
         },
       },
     }),
@@ -31,28 +38,26 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         });
 
         const scope = account?.scope ?? "";
+        const accessToken = account?.access_token;
+
+        if (!accessToken) {
+          console.error("Google login completed without an access token.");
+          return true;
+        }
+
+        const hasCalendar = scope.includes(GOOGLE_CALENDAR_SCOPE);
+        const hasGmail = scope.includes(GMAIL_SCOPE);
 
         const integrations: Array<{
           provider: "GOOGLE_CALENDAR" | "GMAIL";
-          scope: string;
-        }> = [];
-
-        if (scope.includes("https://www.googleapis.com/auth/calendar.readonly")) {
-          integrations.push({
-            provider: "GOOGLE_CALENDAR",
-            scope: "https://www.googleapis.com/auth/calendar.readonly",
-          });
-        }
-
-        if (scope.includes("https://www.googleapis.com/auth/gmail.readonly")) {
-          integrations.push({
-            provider: "GMAIL",
-            scope: "https://www.googleapis.com/auth/gmail.readonly",
-          });
-        }
+          connected: boolean;
+        }> = [
+          { provider: "GOOGLE_CALENDAR", connected: hasCalendar },
+          { provider: "GMAIL", connected: hasGmail },
+        ];
 
         for (const integration of integrations) {
-          if (!account?.access_token) continue;
+          if (!integration.connected) continue;
 
           await prisma.integration.upsert({
             where: {
@@ -64,7 +69,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             update: {
               status: "CONNECTED",
               externalUserId: account.providerAccountId,
-              accessToken: account.access_token,
+              accessToken,
               refreshToken: account.refresh_token ?? undefined,
               expiresAt: account.expires_at
                 ? new Date(account.expires_at * 1000)
@@ -75,7 +80,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
               provider: integration.provider,
               status: "CONNECTED",
               externalUserId: account.providerAccountId,
-              accessToken: account.access_token,
+              accessToken,
               refreshToken: account.refresh_token ?? null,
               expiresAt: account.expires_at
                 ? new Date(account.expires_at * 1000)
@@ -86,7 +91,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
 
         return true;
       } catch (error) {
-        console.error("Google integration setup failed:", error);
+        console.error("Google login/integration setup failed:", error);
         return true;
       }
     },
