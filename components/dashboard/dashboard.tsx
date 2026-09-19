@@ -19,7 +19,7 @@ import {
   Target,
   X,
 } from "lucide-react";
-import { signOut } from "@/auth";
+import { signOut } from "next-auth/react";
 import { alerts, calendarEvents, emails, initialTasks, type Task } from "@/lib/mock-data";
 
 type ApiTask = {
@@ -205,15 +205,12 @@ export default function Dashboard() {
               <button className="hidden rounded-xl p-2.5 sm:block">
                 <Settings size={19} />
               </button>
-              <form action={async () => { "use server"; await signOut({ redirectTo: "/login" }); }}>
-                <button
-                  type="submit"
+              <button type="button" onClick={() => void signOut({ callbackUrl: "/login" })}
                   title="Sair"
                   className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white transition hover:bg-slate-700"
                 >
                   FT
                 </button>
-              </form>
             </div>
           </header>
 
