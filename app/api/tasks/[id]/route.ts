@@ -26,6 +26,15 @@ export async function PATCH(
     const { id } = await context.params;
     const body = (await request.json()) as { completed?: boolean };
 
+    const existingTask = await prisma.task.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, billId: true },
+    });
+
+    if (!existingTask) {
+      return NextResponse.json({ error: "Tarefa não encontrada." }, { status: 404 });
+    }
+
     const result = await prisma.task.updateMany({
       where: {
         id,
@@ -41,10 +50,26 @@ export async function PATCH(
       return NextResponse.json({ error: "Tarefa não encontrada." }, { status: 404 });
     }
 
+    if (existingTask.billId) {
+      await prisma.bill.updateMany({
+        where: { id: existingTask.billId, userId: user.id },
+        data: { status: body.completed ? "PAID" : "CONFIRMED" },
+      });
+    }
+
     const task = await prisma.task.findFirst({
-      where: {
-        id,
-        userId: user.id,
+      where: { id, userId: user.id },
+      include: {
+        bill: {
+          select: {
+            id: true,
+            merchant: true,
+            amount: true,
+            dueDate: true,
+            status: true,
+            sourceUrl: true,
+          },
+        },
       },
     });
 
