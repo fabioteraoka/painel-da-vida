@@ -109,7 +109,15 @@ async function getMessages(token: string) {
         { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
       );
       if (!detailResponse.ok) return null;
-      return detailResponse.json();
+      const detail = await detailResponse.json() as { id: string; threadId?: string; snippet?: string; labelIds?: string[]; payload?: { headers?: { name: string; value: string }[] } };
+      const header = (name: string) => detail.payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+      try {
+        const classification = await classifyDashboardEmail({ from: header("From"), subject: header("Subject"), snippet: detail.snippet ?? "" });
+        if (!classification.relevant || classification.category === "NOISE") return null;
+        return { ...detail, dashboardCategory: classification.category, dashboardReason: classification.reason };
+      } catch {
+        return null;
+      }
     }),
   );
 
