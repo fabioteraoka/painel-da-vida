@@ -45,8 +45,8 @@ export default function Dashboard() {
               <div id="tarefas"><Card title="Tarefas" icon={<Target size={18}/>} action={`${done}/${tasks.length} concluídas`}><div>{tasks.map(t=><TaskRow key={t.id} task={t} toggle={()=>toggle(t.id)}/>)}</div></Card></div>
             </div>
             <div className="space-y-6">
-              <div id="emails"><Card title="E-mails importantes" icon={<Mail size={18}/>} action="Abrir Gmail"><div className="space-y-2">{emails.map(e=><EmailRow key={e.id} email={e}/>)}</div></Card>
-              <div id="alertas"><Card title="Alertas" icon={<CircleAlert size={18}/>} action="Ver todos"><div className="space-y-3">{alerts.map(a=><AlertRow key={a.id} alert={a}/>)}</div></Card>
+              <div id="emails"><Card title="E-mails importantes" icon={<Mail size={18}/>} action="Abrir Gmail"><div className="space-y-2">{emails.map(e=><EmailRow key={e.id} email={e}/>)}</div></Card></div>
+              <div id="alertas"><Card title="Alertas" icon={<CircleAlert size={18}/>} action="Ver todos"><div className="space-y-3">{alerts.map(a=><AlertRow key={a.id} alert={a}/>)}</div></Card></div>
               <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Progresso do dia</h2><p className="mt-1 text-sm text-slate-500">{done} de {tasks.length} tarefas concluídas</p></div><span className="text-xl font-bold text-indigo-600">{Math.round(done/tasks.length*100)}%</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{width:`${done/tasks.length*100}%`}}/></div></section>
             </div>
           </div>
