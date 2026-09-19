@@ -247,6 +247,27 @@ export default function Dashboard() {
           setPaymentAccounts(accountData);
           setPeople(peopleData);
         }
+
+        // Verifica o Gmail automaticamente no máximo a cada 30 minutos por navegador.
+        // A busca roda em segundo plano para o dashboard continuar responsivo.
+        const lastScan = Number(window.localStorage.getItem("painel-da-vida:last-bill-scan") ?? "0");
+        if (Date.now() - lastScan >= 30 * 60 * 1000) {
+          window.localStorage.setItem("painel-da-vida:last-bill-scan", String(Date.now()));
+          void (async () => {
+            try {
+              const scanResponse = await fetch("/api/bills/scan", {
+                method: "POST",
+                cache: "no-store",
+              });
+              if (!scanResponse.ok) return;
+              const refreshedBills = await fetch("/api/bills", { cache: "no-store" });
+              if (!refreshedBills.ok || cancelled) return;
+              setBills((await refreshedBills.json()) as BillApi[]);
+            } catch {
+              // O cron permanece como rede de segurança caso a verificação em tela falhe.
+            }
+          })();
+        }
       } catch {
         if (!cancelled) setBillMessage("Não foi possível carregar as contas.");
       } finally {
