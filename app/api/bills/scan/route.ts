@@ -52,13 +52,21 @@ export async function scanForUser(userId:string){
     if(!r.ok)continue;
     const full=await r.json() as GmailDetail;
     try{
-      const result=await classifyBillEmail({from:header(full,"From"),subject:header(full,"Subject"),snippet:full.snippet,body:textPart(full.payload)});
+      const result=await classifyBillEmail({from:header(full,"From"),subject:header(full,"Subject"),snippet:full.snippet,body:textPart(full.payload),userName:user.name ?? undefined});
       if(!result.isBill||result.confidence<0.65)continue;
+      let responsiblePersonId: string | null = null;
+      if (result.responsibleName) {
+        const person = await prisma.person.findFirst({
+          where: { userId, active: true, name: { contains: result.responsibleName, mode: "insensitive" } },
+          select: { id: true },
+        });
+        responsiblePersonId = person?.id ?? null;
+      }
       const dueDate=result.dueDate&&/^\d{4}-\d{2}-\d{2}$/.test(result.dueDate)?new Date(result.dueDate+"T12:00:00"):null;
       await prisma.bill.upsert({
         where:{userId_externalEmailId:{userId,externalEmailId:full.id}},
-        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
-        create:{userId,externalEmailId:full.id,threadId:full.threadId??null,sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id}
+        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
+        create:{userId,externalEmailId:full.id,threadId:full.threadId??null,sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id}
       });
       detected++;
     }catch(e){console.error("Bill AI classification failed",full.id,e);}
@@ -70,7 +78,7 @@ export async function POST(){
   try{
     const session=await auth();
     if(!session?.user?.email)return NextResponse.json({error:"Não autenticado."},{status:401});
-    const user=await prisma.user.findUnique({where:{email:session.user.email},select:{id:true}});
+    const user=await prisma.user.findUnique({where:{email:session.user.email},select:{id:true,name:true}});
     if(!user)return NextResponse.json({error:"Usuário não encontrado."},{status:404});
     return NextResponse.json({ok:true,...await scanForUser(user.id)});
   }catch(e){
