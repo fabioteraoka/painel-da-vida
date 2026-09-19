@@ -62,7 +62,7 @@ export async function PATCH(request: Request) {
       where:{userId:user.id,billId:updated.id},
       data:{status:"COMPLETED",completedAt:new Date()}
     });
-  } else if(body.status && body.status!=="PAID"){
+  } else if(body.status){
     await prisma.task.updateMany({
       where:{userId:user.id,billId:updated.id},
       data:{status:"PENDING",completedAt:null}
