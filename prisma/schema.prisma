@@ -1,0 +1,12 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+model User { id String @id @default(cuid()) name String? email String @unique createdAt DateTime @default(now()) updatedAt DateTime @updatedAt tasks Task[] events CalendarEvent[] emails Email[] integrations Integration[] }
+model Task { id String @id @default(cuid()) title String description String? status TaskStatus @default(PENDING) priority Priority @default(MEDIUM) dueAt DateTime? completedAt DateTime? userId String user User @relation(fields:[userId],references:[id],onDelete:Cascade) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt @@index([userId]) @@index([dueAt]) }
+model CalendarEvent { id String @id @default(cuid()) externalId String? title String description String? startAt DateTime endAt DateTime location String? source String @default("local") userId String user User @relation(fields:[userId],references:[id],onDelete:Cascade) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt @@index([userId]) @@index([startAt]) }
+model Email { id String @id @default(cuid()) externalId String? threadId String? sender String senderName String? subject String snippet String? receivedAt DateTime category EmailCategory @default(INFORMATIVE) needsAction Boolean @default(false) isRead Boolean @default(false) source String @default("local") userId String user User @relation(fields:[userId],references:[id],onDelete:Cascade) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt @@index([userId]) @@index([receivedAt]) @@index([needsAction]) }
+model Integration { id String @id @default(cuid()) provider IntegrationProvider status IntegrationStatus @default(DISCONNECTED) externalUserId String? accessToken String? refreshToken String? expiresAt DateTime? userId String user User @relation(fields:[userId],references:[id],onDelete:Cascade) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt @@unique([userId,provider]) }
+enum TaskStatus { PENDING IN_PROGRESS COMPLETED CANCELLED }
+enum Priority { LOW MEDIUM HIGH }
+enum EmailCategory { RESPOND_TODAY FOLLOW_UP INFORMATIVE }
+enum IntegrationProvider { GOOGLE_CALENDAR GMAIL }
+enum IntegrationStatus { CONNECTED DISCONNECTED ERROR }
