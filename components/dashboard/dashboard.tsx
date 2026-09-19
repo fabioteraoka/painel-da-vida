@@ -347,7 +347,6 @@ export default function Dashboard() {
                   icon={<CalendarDays size={18} />}
                   action="Ver agenda"
                   actionHref="https://calendar.google.com/calendar/u/0/r/day"
-                  actionHref="https://calendar.google.com/calendar/u/0/r/day"
                 >
                   <div className="divide-y divide-slate-100">
                     {calendarLoading ? (
