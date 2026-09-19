@@ -1,14 +1,23 @@
+import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { initialTasks } from "@/lib/mock-data";
 
-const DEMO_EMAIL = "fabioteraoka@painel.local";
+async function getCurrentUser() {
+  const session = await auth();
+  const email = session?.user?.email;
 
-async function getDemoUser() {
+  if (!email) return null;
+
   return prisma.user.upsert({
-    where: { email: DEMO_EMAIL },
-    update: { name: "Fábio" },
-    create: { email: DEMO_EMAIL, name: "Fábio" },
+    where: { email },
+    update: {
+      name: session.user.name ?? undefined,
+    },
+    create: {
+      email,
+      name: session.user.name ?? null,
+    },
   });
 }
 
@@ -50,7 +59,12 @@ async function seedDemoTasks(userId: string) {
 
 export async function GET() {
   try {
-    const user = await getDemoUser();
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     await seedDemoTasks(user.id);
 
     const tasks = await prisma.task.findMany({
@@ -70,7 +84,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const user = await getDemoUser();
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const body = (await request.json()) as {
       title?: string;
       description?: string;
