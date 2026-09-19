@@ -98,10 +98,10 @@ export default function Dashboard() {
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [databaseError, setDatabaseError] = useState(false);
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
-  const [calendarLoading, setCalendarLoading] = useState(true);
+  const [calendarLoading, setCalendarLoading] = useState(true);\n  const [calendarError, setCalendarError] = useState(false);
   const [calendarError, setCalendarError] = useState(false);
   const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
-  const [gmailLoading, setGmailLoading] = useState(true);
+  const [gmailLoading, setGmailLoading] = useState(true);\n  const [gmailError, setGmailError] = useState(false);
   const [gmailError, setGmailError] = useState(false);
 
   useEffect(() => {
@@ -138,7 +138,7 @@ export default function Dashboard() {
         if (!response.ok) throw new Error("Falha ao carregar agenda.");
         const data = (await response.json()) as { items?: CalendarApiEvent[] };
         if (!cancelled) {
-          setRealCalendarEvents(data.items ?? []);
+          setRealCalendarEvents(data.items ?? []);\n          setCalendarError(false);
           setCalendarError(false);
         }
       } catch {
@@ -159,7 +159,7 @@ export default function Dashboard() {
         if (!response.ok) throw new Error("Falha ao carregar Gmail.");
         const data = (await response.json()) as { messages?: GmailApiMessage[] };
         if (!cancelled) {
-          setGmailMessages(data.messages ?? []);
+          setGmailMessages(data.messages ?? []);\n          setGmailError(false);
           setGmailError(false);
         }
       } catch {
@@ -345,7 +345,7 @@ export default function Dashboard() {
                 <Card
                   title="Agenda de hoje"
                   icon={<CalendarDays size={18} />}
-                  action="Ver agenda"
+                  action="Ver agenda"\n                  actionHref="https://calendar.google.com/calendar/u/0/r/day"
                   actionHref="https://calendar.google.com/calendar/u/0/r/day"
                 >
                   <div className="divide-y divide-slate-100">
@@ -406,7 +406,7 @@ export default function Dashboard() {
                   <Card
                     title="E-mails importantes"
                     icon={<Mail size={18} />}
-                    action="Abrir Gmail"
+                    action="Abrir Gmail"\n                    actionHref="https://mail.google.com/mail/u/0/#inbox"
                     actionHref="https://mail.google.com/mail/u/0/#inbox"
                   >
                     <div className="space-y-2">
@@ -416,7 +416,7 @@ export default function Dashboard() {
                         <p className="py-3 text-sm text-slate-400">
                         {gmailError
                           ? "Não foi possível carregar o Gmail."
-                          : "Nenhum e-mail recente encontrado."}
+                          : "{gmailError ? "Não foi possível carregar o Gmail." : "Nenhum e-mail recente encontrado."}"}
                       </p>
                       ) : (
                         gmailMessages.slice(0, 8).map((message) => {
