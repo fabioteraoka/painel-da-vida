@@ -129,6 +129,7 @@ model Bill {
   user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   paymentAccountId   String?
   paymentAccount     PaymentAccount? @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  responsibleType     BillResponsibleType @default(UNKNOWN)
   responsiblePersonId String?
   responsiblePerson   Person? @relation(fields: [responsiblePersonId], references: [id], onDelete: SetNull)
   createdAt          DateTime    @default(now())
@@ -159,6 +160,12 @@ enum BillCategory {
   CONDOMINIUM
   RENT
   OTHER
+}
+
+enum BillResponsibleType {
+  ME
+  OTHER
+  UNKNOWN
 }
 
 enum BillStatus {
