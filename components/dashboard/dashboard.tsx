@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Bell,
@@ -103,6 +103,10 @@ export default function Dashboard() {
   const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailError, setGmailError] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setToday(new Date());
@@ -220,6 +224,12 @@ export default function Dashboard() {
   const completionRate = tasks.length
     ? Math.round((done / tasks.length) * 100)
     : 0;
+
+  const unreadEmails = gmailMessages.filter((message) => message.labelIds?.includes("UNREAD")).length;
+  const todayEventCount = realCalendarEvents.length;
+  const pendingTasks = tasks.filter((task) => !task.completed);
+  const highPriorityPending = pendingTasks.filter((task) => task.priority === "Alta").length;
+  const notificationCount = (highPriorityPending > 0 ? 1 : 0) + (unreadEmails > 0 ? 1 : 0) + (todayEventCount > 0 ? 1 : 0);
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
