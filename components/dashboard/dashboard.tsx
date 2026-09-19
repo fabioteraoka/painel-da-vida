@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Mail,
   Menu,
+  Plus,
   Search,
   Settings,
   Sparkles,
@@ -30,6 +31,26 @@ type GmailApiMessage = {
   payload?: {
     headers?: { name: string; value: string }[];
   };
+};
+
+type BillApi = {
+  id: string;
+  sender: string;
+  subject: string;
+  merchant: string | null;
+  amount: number | null;
+  dueDate: string | null;
+  category: string;
+  status: "NEEDS_REVIEW" | "CONFIRMED" | "SCHEDULED" | "PAID" | "IGNORED";
+  confidence: number | null;
+  sourceUrl: string | null;
+  paymentAccount: { id: string; name: string; type: string } | null;
+};
+
+type PaymentAccountApi = {
+  id: string;
+  name: string;
+  type: string;
 };
 
 type CalendarApiEvent = {
@@ -105,6 +126,14 @@ export default function Dashboard() {
   const [gmailError, setGmailError] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [bills, setBills] = useState<BillApi[]>([]);
+  const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccountApi[]>([]);
+  const [billLoading, setBillLoading] = useState(true);
+  const [billScanning, setBillScanning] = useState(false);
+  const [billMessage, setBillMessage] = useState<string | null>(null);
+  const [newAccountOpen, setNewAccountOpen] = useState(false);
+  const [newAccountName, setNewAccountName] = useState("");
+  const [newAccountType, setNewAccountType] = useState<PaymentAccountApi["type"]>("BANK_ACCOUNT");
   const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -175,6 +204,28 @@ export default function Dashboard() {
 
     void loadGmail();
 
+    async function loadBills() {
+      try {
+        const [billResponse, accountResponse] = await Promise.all([
+          fetch("/api/bills", { cache: "no-store" }),
+          fetch("/api/payment-accounts", { cache: "no-store" }),
+        ]);
+        if (!billResponse.ok || !accountResponse.ok) throw new Error("Falha ao carregar contas.");
+        const billData = (await billResponse.json()) as BillApi[];
+        const accountData = (await accountResponse.json()) as PaymentAccountApi[];
+        if (!cancelled) {
+          setBills(billData);
+          setPaymentAccounts(accountData);
+        }
+      } catch {
+        if (!cancelled) setBillMessage("Não foi possível carregar as contas.");
+      } finally {
+        if (!cancelled) setBillLoading(false);
+      }
+    }
+
+    void loadBills();
+
     return () => {
       cancelled = true;
     };
@@ -229,7 +280,10 @@ export default function Dashboard() {
   const todayEventCount = realCalendarEvents.length;
   const pendingTasks = tasks.filter((task) => !task.completed);
   const highPriorityPending = pendingTasks.filter((task) => task.priority === "Alta").length;
-  const notificationCount = (highPriorityPending > 0 ? 1 : 0) + (unreadEmails > 0 ? 1 : 0) + (todayEventCount > 0 ? 1 : 0);
+  const notificationCount = (highPriorityPending > 0 ? 1 : 0) + (unreadEmails > 0 ? 1 : 0) + (todayEventCount > 0 ? 1 : 0) + (bills.filter((bill) => bill.status !== "PAID").length > 0 ? 1 : 0);
+  const openBills = bills.filter((bill) => bill.status !== "PAID");
+  const overdueBills = openBills.filter((bill) => bill.dueDate && new Date(bill.dueDate) < new Date());
+  const billTotal = openBills.reduce((sum, bill) => sum + (bill.amount ?? 0), 0);
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
@@ -351,6 +405,106 @@ export default function Dashboard() {
                 </div>
               </div>
             </section>
+
+            <div id="contas" className="mb-6">
+              <Card
+                title="Contas a pagar"
+                icon={<FileText size={18} />}
+                action={billScanning ? "Verificando..." : "Verificar e-mails"}
+              >
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+                      {openBills.length} em aberto
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                      R$ {billTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </div>
+                    {overdueBills.length > 0 && (
+                      <div className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                        {overdueBills.length} vencida(s)
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setBillScanning(true);
+                        setBillMessage(null);
+                        try {
+                          const response = await fetch("/api/bills/scan", { method: "POST" });
+                          const data = await response.json();
+                          if (!response.ok) throw new Error(data.error ?? "Não foi possível verificar o Gmail.");
+                          const billsResponse = await fetch("/api/bills", { cache: "no-store" });
+                          if (billsResponse.ok) setBills((await billsResponse.json()) as BillApi[]);
+                          setBillMessage(data.detected > 0 ? data.detected + " conta(s) encontrada(s)." : "Nenhuma conta nova encontrada.");
+                        } catch (error) {
+                          setBillMessage(error instanceof Error ? error.message : "Falha ao verificar o Gmail.");
+                        } finally {
+                          setBillScanning(false);
+                        }
+                      }}
+                      className="ml-auto rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                    >
+                      {billScanning ? "Analisando..." : "Verificar agora"}
+                    </button>
+                  </div>
+
+                  {billMessage && <p className="text-xs text-slate-500">{billMessage}</p>}
+
+                  {billLoading ? (
+                    <p className="py-3 text-sm text-slate-400">Carregando contas...</p>
+                  ) : bills.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                      Ainda não há contas detectadas. Clique em “Verificar agora” para analisar os e-mails recentes.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {bills.slice(0, 8).map((bill) => (
+                        <BillRow
+                          key={bill.id}
+                          bill={bill}
+                          accounts={paymentAccounts}
+                          onUpdated={(updated) => setBills((items) => items.map((item) => item.id === updated.id ? { ...item, paymentAccount: updated.paymentAccount, status: updated.status } : item))}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="border-t border-slate-100 pt-3">
+                    {!newAccountOpen ? (
+                      <button type="button" onClick={() => setNewAccountOpen(true)} className="flex items-center gap-2 text-xs font-semibold text-indigo-600">
+                        <Plus size={14} /> Cadastrar conta de pagamento
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={newAccountName}
+                          onChange={(e) => setNewAccountName(e.target.value)}
+                          placeholder="Ex.: Itaú débito"
+                          className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                        />
+                        <select value={newAccountType} onChange={(e) => setNewAccountType(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                          <option value="BANK_ACCOUNT">Conta bancária</option>
+                          <option value="CREDIT_CARD">Cartão</option>
+                          <option value="PIX">PIX</option>
+                          <option value="OTHER">Outro</option>
+                        </select>
+                        <button type="button" onClick={async () => {
+                          if (!newAccountName.trim()) return;
+                          const response = await fetch("/api/payment-accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newAccountName, type: newAccountType }) });
+                          if (response.ok) {
+                            const account = await response.json() as PaymentAccountApi;
+                            setPaymentAccounts((items) => [...items, account]);
+                            setNewAccountName("");
+                            setNewAccountOpen(false);
+                          }
+                        }} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Salvar</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.25fr_0.9fr]">
               <div className="space-y-6" id="agenda">
@@ -660,6 +814,60 @@ function TaskRow({
       <span className="hidden w-14 text-right text-xs text-slate-400 sm:block">
         {task.due}
       </span>
+    </div>
+  );
+}
+
+function BillRow({
+  bill,
+  accounts,
+  onUpdated,
+}: {
+  bill: BillApi;
+  accounts: PaymentAccountApi[];
+  onUpdated: (updated: { id: string; paymentAccount: BillApi["paymentAccount"]; status: BillApi["status"] }) => void;
+}) {
+  const due = bill.dueDate ? new Date(bill.dueDate) : null;
+  const overdue = !!due && due < new Date() && bill.status !== "PAID";
+  async function update(payload: { paymentAccountId?: string | null; status?: BillApi["status"] }) {
+    const response = await fetch("/api/bills", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: bill.id, ...payload }) });
+    if (!response.ok) return;
+    const data = await response.json();
+    onUpdated(data);
+  }
+  return (
+    <div className="rounded-xl border border-slate-100 p-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">{bill.merchant ?? bill.subject}</p>
+          <p className="truncate text-xs text-slate-400">{bill.sender}</p>
+          <div className="mt-1 flex flex-wrap gap-2 text-xs">
+            <span className={overdue ? "font-semibold text-red-600" : "text-slate-500"}>
+              {due ? "Vencimento " + due.toLocaleDateString("pt-BR") : "Vencimento não identificado"}
+            </span>
+            {bill.amount !== null && <span className="font-semibold text-slate-700">R$ {bill.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
+          </div>
+        </div>
+        <select
+          value={bill.paymentAccount?.id ?? ""}
+          onChange={(e) => void update({ paymentAccountId: e.target.value || null })}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+        >
+          <option value="">Definir conta para pagar</option>
+          {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+        </select>
+        <select
+          value={bill.status}
+          onChange={(e) => void update({ status: e.target.value as BillApi["status"] })}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+        >
+          <option value="NEEDS_REVIEW">Revisar</option>
+          <option value="CONFIRMED">Confirmada</option>
+          <option value="SCHEDULED">Programada</option>
+          <option value="PAID">Paga</option>
+        </select>
+        {bill.sourceUrl && <a href={bill.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-indigo-600">E-mail</a>}
+      </div>
     </div>
   );
 }
