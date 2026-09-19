@@ -395,7 +395,7 @@ export default function Dashboard() {
                   <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
                     {todayEventCount === 0 && pendingTasks.length === 0 && unreadEmails === 0
                       ? "Seu dia está tranquilo por enquanto."
-                      : "Hoje você tem " + todayEventCount + " compromisso(s), " + pendingTasks.length + " tarefa(s) pendente(s) e " + unreadEmails + " e-mail(s) não lido(s)." + (highPriorityPending > 0 ? " Há " + highPriorityPending + " tarefa(s) de alta prioridade." : "")}
+                      : "Hoje você tem " + todayEventCount + " compromisso(s), " + pendingTasks.length + " tarefa(s) pendente(s), " + unreadEmails + " e-mail(s) não lido(s) e " + openBills.length + " conta(s) em aberto." + (overdueBills.length > 0 ? " Há " + overdueBills.length + " conta(s) vencida(s)." : "")}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Tag text={todayEventCount + " compromisso(s)"} />
@@ -671,6 +671,7 @@ function SidebarContent() {
         <Nav icon={<CalendarDays size={18} />} label="Agenda" />
         <Nav icon={<Target size={18} />} label="Tarefas" />
         <Nav icon={<Mail size={18} />} label="E-mails" />
+        <Nav icon={<FileText size={18} />} label="Contas" />
         <Nav icon={<CircleAlert size={18} />} label="Alertas" />
       </nav>
 
@@ -955,7 +956,9 @@ function Nav({
         ? "tarefas"
         : label === "E-mails"
           ? "emails"
-          : label === "Alertas"
+          : label === "Contas"
+            ? "contas"
+            : label === "Alertas"
             ? "alertas"
             : null;
 
