@@ -22,7 +22,7 @@ async function refresh(userId:string,refreshToken:string){
   return d.access_token;
 }
 
-async function scan(userId:string){
+export async function scanForUser(userId:string){
   if(!process.env.AI_GATEWAY_API_KEY)throw new Error("AI_GATEWAY_API_KEY não configurada.");
   const integration=await prisma.integration.findUnique({where:{userId_provider:{userId,provider:"GMAIL"}}});
   if(!integration?.accessToken)throw new Error("Gmail não conectado.");
@@ -32,7 +32,7 @@ async function scan(userId:string){
     token=await refresh(userId,integration.refreshToken);
   }
   const list=await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?"+new URLSearchParams({maxResults:"50",q:"newer_than:30d"}),{headers:{Authorization:"Bearer "+token},cache:"no-store"});
-  if(list.status===401&&integration.refreshToken){token=await refresh(userId,integration.refreshToken);return scan(userId);}
+  if(list.status===401&&integration.refreshToken){token=await refresh(userId,integration.refreshToken);return scanForUser(userId);}
   if(!list.ok)throw new Error("Não foi possível consultar o Gmail.");
   const data=await list.json() as {messages?:GmailMessage[]};
   const candidates:GmailDetail[]=[];
@@ -72,7 +72,7 @@ export async function POST(){
     if(!session?.user?.email)return NextResponse.json({error:"Não autenticado."},{status:401});
     const user=await prisma.user.findUnique({where:{email:session.user.email},select:{id:true}});
     if(!user)return NextResponse.json({error:"Usuário não encontrado."},{status:404});
-    return NextResponse.json({ok:true,...await scan(user.id)});
+    return NextResponse.json({ok:true,...await scanForUser(user.id)});
   }catch(e){
     console.error("Bill scan failed",e);
     return NextResponse.json({error:e instanceof Error?e.message:"Não foi possível verificar as contas."},{status:503});
