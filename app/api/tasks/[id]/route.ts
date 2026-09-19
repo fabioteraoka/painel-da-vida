@@ -50,13 +50,6 @@ export async function PATCH(
       return NextResponse.json({ error: "Tarefa não encontrada." }, { status: 404 });
     }
 
-    if (existingTask.billId) {
-      await prisma.bill.updateMany({
-        where: { id: existingTask.billId, userId: user.id },
-        data: { status: body.completed ? "PAID" : "CONFIRMED" },
-      });
-    }
-
     const task = await prisma.task.findFirst({
       where: { id, userId: user.id },
       include: {
