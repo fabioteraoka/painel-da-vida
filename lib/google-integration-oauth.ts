@@ -48,7 +48,17 @@ export async function startGoogleIntegration(
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const { clientId } = googleCredentials();
+  const clientId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
+  const clientSecret =
+    process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    const target = new URL("/", request.url);
+    target.searchParams.set("integration", integration);
+    target.searchParams.set("connected", "simulated");
+    return NextResponse.redirect(target);
+  }
+
   const state = crypto.randomUUID();
   const cookieStore = await cookies();
   const { stateCookie, scope } = config[integration];

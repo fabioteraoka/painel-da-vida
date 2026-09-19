@@ -1,3 +1,5 @@
 import { gateway } from "ai";
 
-export const aiModel = gateway("openai/gpt-5.4");
+const modelId = process.env.AI_MODEL || "openai/gpt-4o-mini";
+export const aiModel = gateway(modelId);
+export const isAiGatewayAvailable = () => Boolean(process.env.AI_GATEWAY_API_KEY);

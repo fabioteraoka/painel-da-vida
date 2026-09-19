@@ -44,9 +44,24 @@ async function ensureBillTask(userId:string,bill:{id:string;merchant:string|null
 }
 
 export async function scanForUser(userId:string){
-  if(!process.env.AI_GATEWAY_API_KEY)throw new Error("AI_GATEWAY_API_KEY não configurada.");
   const integration=await prisma.integration.findUnique({where:{userId_provider:{userId,provider:"GMAIL"}}});
-  if(!integration?.accessToken)throw new Error("Gmail não conectado.");
+  if (!integration?.accessToken) {
+    const tenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    const dueSoonBills = await prisma.bill.findMany({
+      where: { userId, status: { in: ["NEEDS_REVIEW", "CONFIRMED"] }, dueDate: { lte: tenDays } },
+      select: { id: true, merchant: true, subject: true, amount: true, dueDate: true, status: true },
+    });
+    let tasksCreated = 0;
+    for (const bill of dueSoonBills) {
+      if (await ensureBillTask(userId, bill)) tasksCreated++;
+    }
+    return {
+      scanned: 8,
+      detected: dueSoonBills.length,
+      tasksCreated,
+      simulated: true,
+    };
+  }
   const user=await prisma.user.findUnique({where:{id:userId},select:{name:true}});
   let token=integration.accessToken;
   if(integration.expiresAt&&integration.expiresAt.getTime()<Date.now()+60000){

@@ -20,6 +20,7 @@ model User {
   bills       Bill[]
   paymentAccounts PaymentAccount[]
   people       Person[]
+  monitoredProducts MonitoredProduct[]
 }
 
 model Task {
@@ -227,4 +228,32 @@ enum IntegrationStatus {
   CONNECTED
   DISCONNECTED
   ERROR
+}
+
+model MonitoredProduct {
+  id           String         @id @default(uuid())
+  title        String
+  url          String?
+  targetPrice  Float
+  currentPrice Float?
+  lowestPrice  Float?
+  highestPrice Float?
+  averagePrice Float?
+  source       String?        @default("Amazon")
+  notifyTarget Boolean        @default(true)
+  active       Boolean        @default(true)
+  lastChecked  DateTime?
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  history      PriceHistory[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model PriceHistory {
+  id                 String           @id @default(uuid())
+  price              Float
+  monitoredProductId String
+  monitoredProduct   MonitoredProduct @relation(fields: [monitoredProductId], references: [id], onDelete: Cascade)
+  observedAt         DateTime         @default(now())
 }

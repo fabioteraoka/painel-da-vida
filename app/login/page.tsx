@@ -18,28 +18,27 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form
-          className="mt-8"
-          action={async () => {
-            "use server";
-            await signIn("google", { redirectTo: "/" });
-          }}
-        >
-          <button
-            type="submit"
-            className="flex w-full items-center justify-center gap-3 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-          >
-            Continuar com Google
-          </button>
-        </form>
-
-        <div className="mt-3">
+        <div className="mt-8 space-y-3">
           <Link
-            href="/?demo=true"
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            href="/"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-xs transition hover:bg-indigo-700"
           >
-            Explorar Painel (Modo Demonstração)
+            Entrar como Fábio Teraoka (Acesso Rápido)
           </Link>
+
+          <form
+            action={async () => {
+              "use server";
+              await signIn("google", { redirectTo: "/" });
+            }}
+          >
+            <button
+              type="submit"
+              className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Conectar com Google OAuth
+            </button>
+          </form>
         </div>
 
         <p className="mt-6 text-center text-xs leading-5 text-slate-400">

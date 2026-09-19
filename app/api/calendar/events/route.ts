@@ -61,10 +61,64 @@ export async function GET() {
     });
 
     if (!integration?.accessToken) {
-      return NextResponse.json(
-        { error: "Google Calendar não conectado.", connected: false },
-        { status: 409 },
-      );
+      const today = new Date();
+      const createTime = (hours: number, minutes: number) => {
+        const d = new Date(today);
+        d.setHours(hours, minutes, 0, 0);
+        return d.toISOString();
+      };
+
+      return NextResponse.json({
+        connected: false,
+        isSimulated: true,
+        items: [
+          {
+            id: "cal-1",
+            summary: "Projeto MOMQ — Alinhamento",
+            description: "Reunião de acompanhamento das entregas com o time de engenharia.",
+            start: { dateTime: createTime(8, 30) },
+            end: { dateTime: createTime(9, 30) },
+            location: "Microsoft Teams",
+            htmlLink: "https://calendar.google.com",
+          },
+          {
+            id: "cal-2",
+            summary: "Suprimentos e Fornecedores",
+            description: "Alinhamento sobre prazos de entrega e reposição de estoque.",
+            start: { dateTime: createTime(11, 0) },
+            end: { dateTime: createTime(12, 0) },
+            location: "Google Meet",
+            htmlLink: "https://meet.google.com",
+          },
+          {
+            id: "cal-3",
+            summary: "Sync Estratégico com Diretoria",
+            description: "Apresentação de resultados e metas operacionais do trimestre.",
+            start: { dateTime: createTime(14, 0) },
+            end: { dateTime: createTime(15, 0) },
+            location: "Sala de Reuniões 3",
+            htmlLink: "https://calendar.google.com",
+          },
+          {
+            id: "cal-4",
+            summary: "Alinhamento Operacional Fábrica",
+            description: "⚠️ Reunião urgente convocada pela gerência da fábrica.",
+            start: { dateTime: createTime(14, 30) },
+            end: { dateTime: createTime(15, 30) },
+            location: "Google Meet",
+            htmlLink: "https://meet.google.com",
+          },
+          {
+            id: "cal-5",
+            summary: "Revisão de Boletos e Contas do Mês",
+            description: "Conferir vencimentos de contas de consumo e condomínio.",
+            start: { dateTime: createTime(16, 30) },
+            end: { dateTime: createTime(17, 0) },
+            location: "Home Office",
+            htmlLink: "https://calendar.google.com",
+          },
+        ],
+      });
     }
 
     let accessToken = integration.accessToken;
