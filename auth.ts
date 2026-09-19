@@ -37,7 +37,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           create: { email: user.email, name: user.name ?? null },
         });
 
-        const scope = account?.scope ?? "";
         const accessToken = account?.access_token;
 
         if (!accessToken) {
@@ -45,25 +44,17 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           return true;
         }
 
-        const hasCalendar = scope.includes(GOOGLE_CALENDAR_SCOPE);
-        const hasGmail = scope.includes(GMAIL_SCOPE);
-
-        const integrations: Array<{
-          provider: "GOOGLE_CALENDAR" | "GMAIL";
-          connected: boolean;
-        }> = [
-          { provider: "GOOGLE_CALENDAR", connected: hasCalendar },
-          { provider: "GMAIL", connected: hasGmail },
+        const integrations: Array<"GOOGLE_CALENDAR" | "GMAIL"> = [
+          "GOOGLE_CALENDAR",
+          "GMAIL",
         ];
 
-        for (const integration of integrations) {
-          if (!integration.connected) continue;
-
+        for (const provider of integrations) {
           await prisma.integration.upsert({
             where: {
               userId_provider: {
                 userId: dbUser.id,
-                provider: integration.provider,
+                provider,
               },
             },
             update: {
@@ -77,7 +68,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             },
             create: {
               userId: dbUser.id,
-              provider: integration.provider,
+              provider,
               status: "CONNECTED",
               externalUserId: account.providerAccountId,
               accessToken,
