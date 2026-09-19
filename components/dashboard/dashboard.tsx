@@ -45,6 +45,7 @@ type BillApi = {
   confidence: number | null;
   sourceUrl: string | null;
   paymentAccount: { id: string; name: string; type: string } | null;
+  responsibleType: "ME" | "OTHER" | "UNKNOWN";
   responsiblePerson: { id: string; name: string; relation: string | null } | null;
 };
 
@@ -470,7 +471,7 @@ export default function Dashboard() {
                           bill={bill}
                           accounts={paymentAccounts}
                           people={people}
-                          onUpdated={(updated) => setBills((items) => items.map((item) => item.id === updated.id ? { ...item, paymentAccount: updated.paymentAccount, status: updated.status } : item))}
+                          onUpdated={(updated) => setBills((items) => items.map((item) => item.id === updated.id ? { ...item, paymentAccount: updated.paymentAccount, status: updated.status, responsibleType: updated.responsibleType, responsiblePerson: updated.responsiblePerson } : item))}
                         />
                       ))}
                     </div>
@@ -833,11 +834,11 @@ function BillRow({
   bill: BillApi;
   accounts: PaymentAccountApi[];
   people: { id: string; name: string; relation: string | null }[];
-  onUpdated: (updated: { id: string; paymentAccount: BillApi["paymentAccount"]; status: BillApi["status"] }) => void;
+  onUpdated: (updated: { id: string; paymentAccount: BillApi["paymentAccount"]; status: BillApi["status"]; responsibleType: BillApi["responsibleType"]; responsiblePerson: BillApi["responsiblePerson"] }) => void;
 }) {
   const due = bill.dueDate ? new Date(bill.dueDate) : null;
   const overdue = !!due && due < new Date() && bill.status !== "PAID";
-  async function update(payload: { paymentAccountId?: string | null; responsiblePersonId?: string | null; status?: BillApi["status"] }) {
+  async function update(payload: { paymentAccountId?: string | null; responsiblePersonId?: string | null; responsibleType?: BillApi["responsibleType"]; status?: BillApi["status"] }) {
     const response = await fetch("/api/bills", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: bill.id, ...payload }) });
     if (!response.ok) return;
     const data = await response.json();
@@ -857,8 +858,8 @@ function BillRow({
           </div>
         </div>
         <select
-          value={bill.responsiblePerson?.id ?? ""}
-          onChange={(e) => void update({ responsiblePersonId: e.target.value || null })}
+          value={bill.responsibleType === "ME" ? "__me__" : (bill.responsiblePerson?.id ?? "")}
+          onChange={(e) => void update({ responsiblePersonId: e.target.value === "__me__" ? null : (e.target.value || null), responsibleType: e.target.value === "__me__" ? "ME" : e.target.value ? "OTHER" : "UNKNOWN" })}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
         >
           <option value="">Quem paga essa conta?</option>
