@@ -19,6 +19,7 @@ model User {
   integrations Integration[]
   bills       Bill[]
   paymentAccounts PaymentAccount[]
+  people       Person[]
 }
 
 model Task {
@@ -79,6 +80,20 @@ model Email {
   @@index([needsAction])
 }
 
+model Person {
+  id        String   @id @default(cuid())
+  name      String
+  relation  String?
+  active    Boolean  @default(true)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bills     Bill[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
 model PaymentAccount {
   id        String   @id @default(cuid())
   name      String
@@ -114,6 +129,8 @@ model Bill {
   user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   paymentAccountId   String?
   paymentAccount     PaymentAccount? @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  responsiblePersonId String?
+  responsiblePerson   Person? @relation(fields: [responsiblePersonId], references: [id], onDelete: SetNull)
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
