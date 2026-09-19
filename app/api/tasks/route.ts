@@ -78,6 +78,7 @@ export async function GET() {
         },
       },
       orderBy: [{ completedAt: "asc" }, { dueAt: "asc" }, { createdAt: "desc" }],
+      include: { bill: { select: { merchant: true } } },
     });
 
     return NextResponse.json(tasks);
