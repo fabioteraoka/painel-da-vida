@@ -45,6 +45,7 @@ type BillApi = {
   confidence: number | null;
   sourceUrl: string | null;
   paymentAccount: { id: string; name: string; type: string } | null;
+  responsiblePerson: { id: string; name: string; relation: string | null } | null;
 };
 
 type PaymentAccountApi = {
@@ -128,6 +129,7 @@ export default function Dashboard() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [bills, setBills] = useState<BillApi[]>([]);
   const [paymentAccounts, setPaymentAccounts] = useState<PaymentAccountApi[]>([]);
+  const [people, setPeople] = useState<{ id: string; name: string; relation: string | null }[]>([]);
   const [billLoading, setBillLoading] = useState(true);
   const [billScanning, setBillScanning] = useState(false);
   const [billMessage, setBillMessage] = useState<string | null>(null);
@@ -209,13 +211,17 @@ export default function Dashboard() {
         const [billResponse, accountResponse] = await Promise.all([
           fetch("/api/bills", { cache: "no-store" }),
           fetch("/api/payment-accounts", { cache: "no-store" }),
+          fetch("/api/people", { cache: "no-store" }),
         ]);
         if (!billResponse.ok || !accountResponse.ok) throw new Error("Falha ao carregar contas.");
+        const peopleResponse = arguments[0];
         const billData = (await billResponse.json()) as BillApi[];
         const accountData = (await accountResponse.json()) as PaymentAccountApi[];
+        const peopleData = peopleResponse.ok ? (await peopleResponse.json()) as { id: string; name: string; relation: string | null }[] : [];
         if (!cancelled) {
           setBills(billData);
           setPaymentAccounts(accountData);
+          setPeople(peopleData);
         }
       } catch {
         if (!cancelled) setBillMessage("Não foi possível carregar as contas.");
@@ -464,6 +470,7 @@ export default function Dashboard() {
                           key={bill.id}
                           bill={bill}
                           accounts={paymentAccounts}
+                          people={people}
                           onUpdated={(updated) => setBills((items) => items.map((item) => item.id === updated.id ? { ...item, paymentAccount: updated.paymentAccount, status: updated.status } : item))}
                         />
                       ))}
@@ -826,11 +833,12 @@ function BillRow({
 }: {
   bill: BillApi;
   accounts: PaymentAccountApi[];
+  people: { id: string; name: string; relation: string | null }[];
   onUpdated: (updated: { id: string; paymentAccount: BillApi["paymentAccount"]; status: BillApi["status"] }) => void;
 }) {
   const due = bill.dueDate ? new Date(bill.dueDate) : null;
   const overdue = !!due && due < new Date() && bill.status !== "PAID";
-  async function update(payload: { paymentAccountId?: string | null; status?: BillApi["status"] }) {
+  async function update(payload: { paymentAccountId?: string | null; responsiblePersonId?: string | null; status?: BillApi["status"] }) {
     const response = await fetch("/api/bills", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: bill.id, ...payload }) });
     if (!response.ok) return;
     const data = await response.json();
@@ -849,6 +857,15 @@ function BillRow({
             {bill.amount !== null && <span className="font-semibold text-slate-700">R$ {bill.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
           </div>
         </div>
+        <select
+          value={bill.responsiblePerson?.id ?? ""}
+          onChange={(e) => void update({ responsiblePersonId: e.target.value || null })}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+        >
+          <option value="">Quem paga essa conta?</option>
+          <option value="__me__">Eu</option>
+          {people.map((person) => <option key={person.id} value={person.id}>{person.name}{person.relation ? " — " + person.relation : ""}</option>)}
+        </select>
         <select
           value={bill.paymentAccount?.id ?? ""}
           onChange={(e) => void update({ paymentAccountId: e.target.value || null })}
