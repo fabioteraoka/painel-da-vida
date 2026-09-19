@@ -22,6 +22,15 @@ import {
 import { signIn, signOut } from "next-auth/react";
 import { alerts, calendarEvents, emails, initialTasks, type Task } from "@/lib/mock-data";
 
+type CalendarApiEvent = {
+  id: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+};
+
 type ApiTask = {
   id: string;
   title: string;
@@ -78,6 +87,9 @@ export default function Dashboard() {
   const [mobile, setMobile] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [databaseError, setDatabaseError] = useState(false);
+  const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(true);
+  const [calendarConnected, setCalendarConnected] = useState(false);
 
   useEffect(() => {
     setToday(new Date());
@@ -103,6 +115,28 @@ export default function Dashboard() {
     }
 
     void loadTasks();
+
+    async function loadCalendar() {
+      try {
+        const response = await fetch("/api/calendar/events", { cache: "no-store" });
+        if (response.status === 409 || response.status === 401) {
+          setCalendarConnected(false);
+          return;
+        }
+        if (!response.ok) throw new Error("Falha ao carregar agenda.");
+        const data = (await response.json()) as { items?: CalendarApiEvent[] };
+        if (!cancelled) {
+          setRealCalendarEvents(data.items ?? []);
+          setCalendarConnected(true);
+        }
+      } catch {
+        if (!cancelled) setCalendarConnected(false);
+      } finally {
+        if (!cancelled) setCalendarLoading(false);
+      }
+    }
+
+    void loadCalendar();
 
     return () => {
       cancelled = true;
@@ -203,7 +237,7 @@ export default function Dashboard() {
                 onClick={() => void signIn("google-calendar", { callbackUrl: "/" })}
                 className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:block"
               >
-                Conectar Agenda
+                {calendarConnected ? "Agenda conectada" : "Conectar Agenda"}
               </button>
               <button className="relative rounded-xl p-2.5 text-slate-500">
                 <Bell size={19} />
@@ -239,7 +273,7 @@ export default function Dashboard() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  <Stat value={calendarEvents.length} label="agenda" />
+                  <Stat value={realCalendarEvents.length} label="agenda" />
                   <Stat value={tasks.length - done} label="tarefas" />
                   <Stat
                     value={emails.filter((email) => email.unread).length}
@@ -285,29 +319,39 @@ export default function Dashboard() {
                   action="Ver agenda"
                 >
                   <div className="divide-y divide-slate-100">
-                    {calendarEvents.map((event) => (
-                      <div
-                        key={event.id}
-                        className="flex gap-4 py-4 first:pt-1"
-                      >
-                        <div className="w-[58px] shrink-0 text-sm font-semibold text-slate-500">
-                          {event.time}
-                        </div>
-                        <div className="border-l border-slate-200 pl-4">
-                          <h3 className="text-sm font-semibold">
-                            {event.title}
-                          </h3>
-                          <p className="mt-1 text-sm text-slate-500">
-                            {event.description}
-                          </p>
-                          {event.location && (
-                            <p className="mt-1 text-xs text-slate-400">
-                              {event.location}
-                            </p>
-                          )}
-                        </div>
+                    {calendarLoading ? (
+                      <p className="py-4 text-sm text-slate-400">Carregando agenda...</p>
+                    ) : !calendarConnected ? (
+                      <div className="py-4">
+                        <p className="text-sm text-slate-500">Sua agenda do Google ainda não está conectada.</p>
+                        <button
+                          type="button"
+                          onClick={() => void signIn("google-calendar", { callbackUrl: "/" })}
+                          className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                        >
+                          Conectar Google Calendar
+                        </button>
                       </div>
-                    ))}
+                    ) : realCalendarEvents.length === 0 ? (
+                      <p className="py-4 text-sm text-slate-400">Nenhum compromisso para o restante do dia.</p>
+                    ) : (
+                      realCalendarEvents.map((event) => {
+                        const start = event.start?.dateTime ? new Date(event.start.dateTime) : null;
+                        const end = event.end?.dateTime ? new Date(event.end.dateTime) : null;
+                        const time = start ? start.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "Dia todo";
+                        return (
+                          <div key={event.id} className="flex gap-4 py-4 first:pt-1">
+                            <div className="w-[58px] shrink-0 text-sm font-semibold text-slate-500">{time}</div>
+                            <div className="border-l border-slate-200 pl-4">
+                              <h3 className="text-sm font-semibold">{event.summary ?? "Sem título"}</h3>
+                              {event.description && <p className="mt-1 text-sm text-slate-500">{event.description}</p>}
+                              {event.location && <p className="mt-1 text-xs text-slate-400">{event.location}</p>}
+                              {end && start && <p className="mt-1 text-xs text-slate-400">Até {end.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </Card>
 
