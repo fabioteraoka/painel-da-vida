@@ -208,13 +208,12 @@ export default function Dashboard() {
 
     async function loadBills() {
       try {
-        const [billResponse, accountResponse] = await Promise.all([
+        const [billResponse, accountResponse, peopleResponse] = await Promise.all([
           fetch("/api/bills", { cache: "no-store" }),
           fetch("/api/payment-accounts", { cache: "no-store" }),
           fetch("/api/people", { cache: "no-store" }),
         ]);
         if (!billResponse.ok || !accountResponse.ok) throw new Error("Falha ao carregar contas.");
-        const peopleResponse = arguments[0];
         const billData = (await billResponse.json()) as BillApi[];
         const accountData = (await accountResponse.json()) as PaymentAccountApi[];
         const peopleData = peopleResponse.ok ? (await peopleResponse.json()) as { id: string; name: string; relation: string | null }[] : [];
