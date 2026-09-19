@@ -20,7 +20,6 @@ model User {
   bills       Bill[]
   paymentAccounts PaymentAccount[]
   people       Person[]
-  billTasks     Task[]
 }
 
 model Task {
