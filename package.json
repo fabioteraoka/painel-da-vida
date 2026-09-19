@@ -18,7 +18,9 @@
     "next": "^16.0.0",
     "next-auth": "beta",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "ai": "latest",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
