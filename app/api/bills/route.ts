@@ -36,6 +36,10 @@ export async function PATCH(request: Request) {
   if(!user) return NextResponse.json({error:"Usuário não encontrado."},{status:404});
   const bill=await prisma.bill.findFirst({where:{id:body.id,userId:user.id}});
   if(!bill) return NextResponse.json({error:"Conta não encontrada."},{status:404});
+  if(body.responsiblePersonId){
+    const person=await prisma.person.findFirst({where:{id:body.responsiblePersonId,userId:user.id,active:true},select:{id:true}});
+    if(!person) return NextResponse.json({error:"Pessoa responsável inválida."},{status:400});
+  }
   if(body.paymentAccountId){
     const account=await prisma.paymentAccount.findFirst({where:{id:body.paymentAccountId,userId:user.id,active:true},select:{id:true}});
     if(!account) return NextResponse.json({error:"Conta de pagamento inválida."},{status:400});
