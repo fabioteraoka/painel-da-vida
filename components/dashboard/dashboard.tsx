@@ -895,7 +895,6 @@ function BillRow({
     const data = await response.json();
     onUpdated(data);
   }
-  const paymentCode = bill.pixCode ?? bill.barcode;
   return (
     <div className={`rounded-xl border p-3 ${overdue ? "border-red-200 bg-red-50/30" : "border-slate-100"}`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -961,8 +960,6 @@ function BillRow({
               Copiar código
             </button>
           )}
-  {bill.paymentUrl && <a href={bill.paymentUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">Pagar</a>}
-        {paymentCode && <button type="button" onClick={() => void navigator.clipboard?.writeText(paymentCode)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">Copiar código</button>}
         {bill.sourceUrl && <a href={bill.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-indigo-600">E-mail</a>}
         </div>
       </div>
