@@ -19,7 +19,7 @@ import {
   Target,
   X,
 } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { alerts, calendarEvents, emails, initialTasks, type Task } from "@/lib/mock-data";
 
 type ApiTask = {
@@ -198,6 +198,13 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void signIn("google-calendar", { callbackUrl: "/" })}
+                className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:block"
+              >
+                Conectar Agenda
+              </button>
               <button className="relative rounded-xl p-2.5 text-slate-500">
                 <Bell size={19} />
                 <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-red-500" />
