@@ -17,6 +17,8 @@ model User {
   events       CalendarEvent[]
   emails       Email[]
   integrations Integration[]
+  bills       Bill[]
+  paymentAccounts PaymentAccount[]
 }
 
 model Task {
@@ -75,6 +77,79 @@ model Email {
   @@index([userId])
   @@index([receivedAt])
   @@index([needsAction])
+}
+
+model PaymentAccount {
+  id        String   @id @default(cuid())
+  name      String
+  type      PaymentAccountType @default(BANK_ACCOUNT)
+  details   String?
+  active    Boolean  @default(true)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bills     Bill[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Bill {
+  id                 String      @id @default(cuid())
+  externalEmailId    String?
+  threadId           String?
+  sender             String
+  subject            String
+  merchant           String?
+  amount             Decimal?    @db.Decimal(12, 2)
+  dueDate            DateTime?
+  invoiceNumber      String?
+  category           BillCategory @default(OTHER)
+  status             BillStatus  @default(NEEDS_REVIEW)
+  confidence         Float?
+  aiReason           String?
+  emailReceivedAt    DateTime?
+  sourceUrl          String?
+  userId             String
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentAccountId   String?
+  paymentAccount     PaymentAccount? @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@unique([userId, externalEmailId])
+  @@index([userId, dueDate])
+  @@index([userId, status])
+}
+
+enum PaymentAccountType {
+  BANK_ACCOUNT
+  CREDIT_CARD
+  PIX
+  OTHER
+}
+
+enum BillCategory {
+  ELECTRICITY
+  WATER
+  INTERNET
+  TELEPHONE
+  CREDIT_CARD
+  INSURANCE
+  TAX
+  SUBSCRIPTION
+  SCHOOL
+  CONDOMINIUM
+  RENT
+  OTHER
+}
+
+enum BillStatus {
+  NEEDS_REVIEW
+  CONFIRMED
+  SCHEDULED
+  PAID
+  IGNORED
 }
 
 model Integration {
