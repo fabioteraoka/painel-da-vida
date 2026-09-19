@@ -100,10 +100,8 @@ export default function Dashboard() {
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarError, setCalendarError] = useState(false);
-  const [calendarError, setCalendarError] = useState(false);
   const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
   const [gmailLoading, setGmailLoading] = useState(true);
-  const [gmailError, setGmailError] = useState(false);
   const [gmailError, setGmailError] = useState(false);
 
   useEffect(() => {
@@ -142,7 +140,6 @@ export default function Dashboard() {
         if (!cancelled) {
           setRealCalendarEvents(data.items ?? []);
           setCalendarError(false);
-          setCalendarError(false);
         }
       } catch {
         if (!cancelled) setCalendarError(true);
@@ -163,7 +160,6 @@ export default function Dashboard() {
         const data = (await response.json()) as { messages?: GmailApiMessage[] };
         if (!cancelled) {
           setGmailMessages(data.messages ?? []);
-          setGmailError(false);
           setGmailError(false);
         }
       } catch {
@@ -412,7 +408,6 @@ export default function Dashboard() {
                     title="E-mails importantes"
                     icon={<Mail size={18} />}
                     action="Abrir Gmail"
-                    actionHref="https://mail.google.com/mail/u/0/#inbox"
                     actionHref="https://mail.google.com/mail/u/0/#inbox"
                   >
                     <div className="space-y-2">
