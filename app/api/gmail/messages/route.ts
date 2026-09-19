@@ -89,7 +89,32 @@ async function getMessages(token: string) {
       new URLSearchParams({ maxResults: "20", q: "newer_than:7d" }),
     { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
   );
-  if (!response.ok) return NextResponse.json({ error: "Não foi possível consultar o Gmail." }, { status: 502 });
-  const list = (await response.json()) as { messages?: { id: string; threadId: string }[] };
-  return NextResponse.json({ connected: true, messages: list.messages ?? [] });
+  if (!response.ok) {
+    return NextResponse.json(
+      { error: "Não foi possível consultar o Gmail." },
+      { status: 502 },
+    );
+  }
+
+  const list = (await response.json()) as {
+    messages?: { id: string; threadId: string }[];
+  };
+
+  const messages = await Promise.all(
+    (list.messages ?? []).slice(0, 20).map(async (message) => {
+      const detailResponse = await fetch(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/" +
+          message.id +
+          "?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date",
+        { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
+      );
+      if (!detailResponse.ok) return null;
+      return detailResponse.json();
+    }),
+  );
+
+  return NextResponse.json({
+    connected: true,
+    messages: messages.filter(Boolean),
+  });
 }
