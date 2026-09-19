@@ -139,7 +139,7 @@ export default function Dashboard() {
           setRealCalendarEvents(data.items ?? []);
         }
       } catch {
-        if (!cancelled) setCalendarConnected(false);
+        // Integração indisponível: mantemos a agenda vazia e exibimos o estado de fallback.
       } finally {
         if (!cancelled) setCalendarLoading(false);
       }
@@ -159,7 +159,7 @@ export default function Dashboard() {
           setGmailMessages(data.messages ?? []);
         }
       } catch {
-        if (!cancelled) setGmailConnected(false);
+        // Integração indisponível: mantemos os e-mails vazios e exibimos o estado de fallback.
       } finally {
         if (!cancelled) setGmailLoading(false);
       }
