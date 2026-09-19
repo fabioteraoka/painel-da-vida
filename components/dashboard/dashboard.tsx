@@ -87,6 +87,9 @@ type ApiTask = {
     dueDate: string | null;
     status: "NEEDS_REVIEW" | "CONFIRMED" | "SCHEDULED" | "PAID" | "IGNORED";
     sourceUrl: string | null;
+    paymentUrl: string | null;
+    pixCode: string | null;
+    barcode: string | null;
   } | null;
 };
 
@@ -869,6 +872,16 @@ function TaskRow({
       <span className="hidden rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500 sm:block">
         {task.priority}
       </span>
+      {task.bill?.paymentUrl && (
+        <a href={task.bill.paymentUrl} target="_blank" rel="noopener noreferrer" className="hidden rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[10px] font-semibold text-white sm:block">
+          Pagar
+        </a>
+      )}
+      {task.bill?.pixCode && (
+        <button type="button" onClick={() => void navigator.clipboard?.writeText(task.bill!.pixCode!)} className="hidden rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 sm:block">
+          PIX
+        </button>
+      )}
       <span className="hidden w-14 text-right text-xs text-slate-400 sm:block">
         {task.due}
       </span>
