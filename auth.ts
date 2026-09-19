@@ -7,6 +7,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     Google({
       authorization: {
         params: {
+          scope: "openid email profile",
+        },
+      },
+    }),
+    Google({
+      id: "google-calendar",
+      name: "Google Calendar",
+      authorization: {
+        params: {
           scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
           access_type: "offline",
           prompt: "consent",
@@ -23,7 +32,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
   callbacks: {
     async signIn({ user, account }) {
-      if (!user.email || account?.provider !== "google") return true;
+      if (!user.email) return true;
 
       try {
         const dbUser = await prisma.user.upsert({
@@ -32,7 +41,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           create: { email: user.email, name: user.name ?? null },
         });
 
-        if (account.access_token) {
+        if (account?.provider === "google-calendar" && account.access_token) {
           await prisma.integration.upsert({
             where: {
               userId_provider: {
