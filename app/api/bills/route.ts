@@ -12,7 +12,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
   const bills = await prisma.bill.findMany({
     where: { userId: user.id, status: { not: "IGNORED" } },
-    include: { paymentAccount: true },
+    include: { paymentAccount: true, responsiblePerson: true },
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
     take: 50,
   });
