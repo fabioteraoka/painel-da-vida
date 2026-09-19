@@ -11,28 +11,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    Google({
-      id: "google-calendar",
-      name: "Google Calendar",
-      authorization: {
-        params: {
-          scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
-          access_type: "offline",
-          prompt: "consent",
-        },
-      },
-    }),
-    Google({
-      id: "google-gmail",
-      name: "Gmail",
-      authorization: {
-        params: {
-          scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly",
-          access_type: "offline",
-          prompt: "consent",
-        },
-      },
-    }),
   ],
   pages: {
     signIn: "/login",
@@ -52,21 +30,35 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           create: { email: user.email, name: user.name ?? null },
         });
 
-        if (
-          (account?.provider === "google-calendar" ||
-            account?.provider === "google-gmail") &&
-          account.access_token
-        ) {
-          const provider =
-            account.provider === "google-gmail"
-              ? "GMAIL"
-              : "GOOGLE_CALENDAR";
+        const scope = account?.scope ?? "";
+
+        const integrations: Array<{
+          provider: "GOOGLE_CALENDAR" | "GMAIL";
+          scope: string;
+        }> = [];
+
+        if (scope.includes("https://www.googleapis.com/auth/calendar.readonly")) {
+          integrations.push({
+            provider: "GOOGLE_CALENDAR",
+            scope: "https://www.googleapis.com/auth/calendar.readonly",
+          });
+        }
+
+        if (scope.includes("https://www.googleapis.com/auth/gmail.readonly")) {
+          integrations.push({
+            provider: "GMAIL",
+            scope: "https://www.googleapis.com/auth/gmail.readonly",
+          });
+        }
+
+        for (const integration of integrations) {
+          if (!account?.access_token) continue;
 
           await prisma.integration.upsert({
             where: {
               userId_provider: {
                 userId: dbUser.id,
-                provider,
+                provider: integration.provider,
               },
             },
             update: {
@@ -80,7 +72,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             },
             create: {
               userId: dbUser.id,
-              provider,
+              provider: integration.provider,
               status: "CONNECTED",
               externalUserId: account.providerAccountId,
               accessToken: account.access_token,
