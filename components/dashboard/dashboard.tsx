@@ -137,7 +137,7 @@ export default function Dashboard() {
   const [tasks, setTasks] = useState<DashboardTask[]>(
     initialTasks.map((task) => ({ ...task, id: String(task.id) })),
   );
-  const [today, setToday] = useState<Date | null>(null);
+  const [today, setToday] = useState<Date | null>(() => new Date());
   const [mobile, setMobile] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [databaseError, setDatabaseError] = useState(false);
@@ -165,8 +165,6 @@ export default function Dashboard() {
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setToday(new Date());
-
     let cancelled = false;
 
     async function loadTasks() {

@@ -16,9 +16,9 @@ export async function GET() {
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
     take: 50,
   });
-  return NextResponse.json(bills.map(b => ({
-    id:b.id,sender:b.sender,subject:b.subject,merchant:b.merchant,amount:b.amount?.toNumber()??null,
-    dueDate:b.dueDate?.toISOString()??null,invoiceNumber:b.invoiceNumber,category:b.category,status:b.status,
+  return NextResponse.json(bills.map((b: any) => ({
+    id:b.id,sender:b.sender,subject:b.subject,merchant:b.merchant,amount:b.amount?.toNumber?.()??b.amount??null,
+    dueDate:b.dueDate?.toISOString?.()??b.dueDate??null,invoiceNumber:b.invoiceNumber,category:b.category,status:b.status,
     confidence:b.confidence,aiReason:b.aiReason,sourceUrl:b.sourceUrl,
     responsibleType:b.responsibleType,responsibleName:b.responsibleName,
     paymentUrl:b.paymentUrl,pixCode:b.pixCode,barcode:b.barcode,

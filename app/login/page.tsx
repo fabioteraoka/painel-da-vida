@@ -1,4 +1,5 @@
 import { signIn } from "@/auth";
+import Link from "next/link";
 
 export default function LoginPage() {
   return (
@@ -31,6 +32,15 @@ export default function LoginPage() {
             Continuar com Google
           </button>
         </form>
+
+        <div className="mt-3">
+          <Link
+            href="/?demo=true"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Explorar Painel (Modo Demonstração)
+          </Link>
+        </div>
 
         <p className="mt-6 text-center text-xs leading-5 text-slate-400">
           O acesso será vinculado à sua conta Google. Nenhuma senha do Google é

@@ -7,8 +7,15 @@ const GOOGLE_CALENDAR_SCOPE =
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
+  secret:
+    process.env.AUTH_SECRET ??
+    process.env.NEXTAUTH_SECRET ??
+    "painel-da-vida-mock-secret-key-studio-12345",
   providers: [
     Google({
+      clientId: process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID,
+      clientSecret:
+        process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET,
       authorization: {
         params: {
           scope: `openid email profile ${GOOGLE_CALENDAR_SCOPE} ${GMAIL_SCOPE}`,
