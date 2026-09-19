@@ -275,22 +275,31 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="hidden rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 sm:block">
-                Google conectado
-              </span>
-              <button className="relative rounded-xl p-2.5 text-slate-500">
-                <Bell size={19} />
-                <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-red-500" />
-              </button>
-              <button className="hidden rounded-xl p-2.5 sm:block">
-                <Settings size={19} />
-              </button>
-              <button type="button" onClick={() => void signOut({ callbackUrl: "/login" })}
-                  title="Sair"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white transition hover:bg-slate-700"
-                >
-                  FT
+              <span className="hidden rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 sm:block">Google conectado</span>
+              <div ref={notificationsRef} className="relative">
+                <button type="button" onClick={() => setNotificationsOpen((open) => !open)} aria-label="Notificações" className="relative rounded-xl p-2.5 text-slate-500 hover:bg-slate-50">
+                  <Bell size={19} />
+                  <Bell size={19} />
+                  {notificationCount > 0 && <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{notificationCount}</span>}
                 </button>
+                {notificationsOpen && <div className="absolute right-0 top-12 z-50 w-[330px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                  <h3 className="px-2 py-1 text-sm font-semibold">Notificações</h3>
+                  <div className="mt-2 space-y-1">
+                    {notificationCount === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Tudo em ordem por enquanto.</p> : <>
+                      {highPriorityPending > 0 && <NotificationItem title={highPriorityPending + " tarefa(s) de alta prioridade pendente(s)"} />}
+                      {unreadEmails > 0 && <NotificationItem title={unreadEmails + " e-mail(s) não lido(s)"} />}
+                      {todayEventCount > 0 && <NotificationItem title={todayEventCount + " compromisso(s) hoje"} />}
+                    </>}
+                  </div>
+                </div>}
+              </div>
+              <button className="hidden rounded-xl p-2.5 text-slate-500 hover:bg-slate-50 sm:block" title="Configurações"><Settings size={19} /></button>
+              <div ref={profileRef} className="relative">
+                <button type="button" onClick={() => setProfileOpen((open) => !open)} title="Menu do perfil" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white transition hover:bg-slate-700">FT</button>
+                {profileOpen && <div className="absolute right-0 top-12 z-50 w-44 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                  <button type="button" onClick={() => void signOut({ callbackUrl: "/login" })} className="w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50">Sair da conta</button>
+                </div>}
+              </div>
             </div>
           </header>
 
@@ -336,15 +345,14 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
-                    Sua manhã está relativamente organizada, mas existem duas
-                    respostas importantes aguardando sua atenção. À tarde você
-                    tem compromissos às 15h30 e 18h. Uma tarefa de alta
-                    prioridade vence hoje.
+                    {todayEventCount === 0 && pendingTasks.length === 0 && unreadEmails === 0
+                      ? "Seu dia está tranquilo por enquanto."
+                      : "Hoje você tem " + todayEventCount + " compromisso(s), " + pendingTasks.length + " tarefa(s) pendente(s) e " + unreadEmails + " e-mail(s) não lido(s)." + (highPriorityPending > 0 ? " Há " + highPriorityPending + " tarefa(s) de alta prioridade." : "")}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Tag text="2 respostas importantes" />
-                    <Tag text="1 prazo hoje" />
-                    <Tag text="4 compromissos" />
+                    <Tag text={todayEventCount + " compromisso(s)"} />
+                    <Tag text={pendingTasks.length + " tarefa(s) pendente(s)"} />
+                    <Tag text={unreadEmails + " não lido(s)"} />
                   </div>
                 </div>
               </div>
@@ -782,6 +790,18 @@ function Connection({
         <span className="block text-sm font-medium text-slate-700">{label}</span>
         <span className="block text-[10px] text-slate-400">{status}</span>
       </span>
+    </button>
+  );
+}
+
+function NotificationItem({ title }: { title: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => document.getElementById("alertas")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+      className="w-full rounded-xl p-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+    >
+      {title}
     </button>
   );
 }
