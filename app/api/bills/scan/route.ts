@@ -22,6 +22,49 @@ async function refresh(userId:string,refreshToken:string){
   return d.access_token;
 }
 
+async function syncBillTasks(userId: string) {
+  const now = new Date();
+  const tenDaysFromNow = new Date(now);
+  tenDaysFromNow.setDate(tenDaysFromNow.getDate() + 10);
+
+  const bills = await prisma.bill.findMany({
+    where: {
+      userId,
+      status: { in: ["NEEDS_REVIEW", "CONFIRMED", "SCHEDULED"] },
+      dueDate: { not: null, lte: tenDaysFromNow },
+    },
+    include: { task: true },
+    orderBy: { dueDate: "asc" },
+  });
+
+  for (const bill of bills) {
+    if (bill.task) continue;
+
+    const due = bill.dueDate!;
+    const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / 86400000);
+    const priority = daysUntilDue <= 3 ? "HIGH" : "MEDIUM";
+
+    await prisma.task.create({
+      data: {
+        title: "Pagar " + (bill.merchant ?? bill.subject),
+        description:
+          (bill.responsibleType === "ME"
+            ? "Conta em seu nome."
+            : bill.responsibleType === "OTHER"
+              ? "Conta de " + (bill.responsibleName ?? bill.responsiblePerson?.name ?? "outra pessoa") + "."
+              : "Responsável pela conta precisa ser confirmado.") +
+          (bill.amount !== null ? " Valor: R$ " + Number(bill.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) + "." : ""),
+        priority,
+        dueAt: due,
+        billId: bill.id,
+        userId,
+      },
+    });
+  }
+
+  return bills.length;
+}
+
 export async function scanForUser(userId:string){
   if(!process.env.AI_GATEWAY_API_KEY)throw new Error("AI_GATEWAY_API_KEY não configurada.");
   const integration=await prisma.integration.findUnique({where:{userId_provider:{userId,provider:"GMAIL"}}});
@@ -66,13 +109,14 @@ export async function scanForUser(userId:string){
       const dueDate=result.dueDate&&/^\d{4}-\d{2}-\d{2}$/.test(result.dueDate)?new Date(result.dueDate+"T12:00:00"):null;
       await prisma.bill.upsert({
         where:{userId_externalEmailId:{userId,externalEmailId:full.id}},
-        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,responsibleType,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
-        create:{userId,externalEmailId:full.id,threadId:full.threadId??null,sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id}
+        update:{sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,responsibleType,responsibleName:result.responsibleName,paymentUrl:result.paymentUrl,pixCode:result.pixCode,barcode:result.barcode,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id},
+        create:{userId,externalEmailId:full.id,threadId:full.threadId??null,sender:header(full,"From"),subject:header(full,"Subject"),merchant:result.merchant,amount:result.amount,dueDate,invoiceNumber:result.invoiceNumber,category:result.category,confidence:result.confidence,responsiblePersonId,responsibleType,responsibleName:result.responsibleName,paymentUrl:result.paymentUrl,pixCode:result.pixCode,barcode:result.barcode,aiReason:result.reason,emailReceivedAt:full.internalDate?new Date(Number(full.internalDate)):null,sourceUrl:"https://mail.google.com/mail/u/0/#all/"+full.id}
       });
       detected++;
     }catch(e){console.error("Bill AI classification failed",full.id,e);}
   }
-  return {scanned:candidates.length,detected};
+  const tasksCreated = await syncBillTasks(userId);
+  return {scanned:candidates.length,detected,tasksCreated};
 }
 
 export async function POST(){
