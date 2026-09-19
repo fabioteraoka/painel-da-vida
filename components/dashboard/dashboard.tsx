@@ -269,14 +269,14 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => void signIn("google-calendar", { callbackUrl: "/" })}
+                onClick={() => void signIn("google", { callbackUrl: "/" }, { scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly", access_type: "offline", prompt: "consent" })}
                 className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:block"
               >
                 {calendarConnected ? "Agenda conectada" : "Conectar Agenda"}
               </button>
               <button
                 type="button"
-                onClick={() => void signIn("google-gmail", { callbackUrl: "/" })}
+                onClick={() => void signIn("google", { callbackUrl: "/" }, { scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly", access_type: "offline", prompt: "consent" })}
                 className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 md:block"
               >
                 {gmailConnected ? "Gmail conectado" : "Conectar Gmail"}
@@ -368,7 +368,7 @@ export default function Dashboard() {
                         <p className="text-sm text-slate-500">Sua agenda do Google ainda não está conectada.</p>
                         <button
                           type="button"
-                          onClick={() => void signIn("google-calendar", { callbackUrl: "/" })}
+                          onClick={() => void signIn("google", { callbackUrl: "/" }, { scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly", access_type: "offline", prompt: "consent" })}
                           className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
                         >
                           Conectar Google Calendar
@@ -435,7 +435,7 @@ export default function Dashboard() {
                           <p className="text-sm text-slate-500">Seu Gmail ainda não está conectado.</p>
                           <button
                             type="button"
-                            onClick={() => void signIn("google-gmail", { callbackUrl: "/" })}
+                            onClick={() => void signIn("google", { callbackUrl: "/" }, { scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly", access_type: "offline", prompt: "consent" })}
                             className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
                           >
                             Conectar Gmail
