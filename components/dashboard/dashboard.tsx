@@ -22,6 +22,16 @@ import {
 import { signIn, signOut } from "next-auth/react";
 import { alerts, calendarEvents, emails, initialTasks, type Task } from "@/lib/mock-data";
 
+type GmailApiMessage = {
+  id: string;
+  threadId?: string;
+  labelIds?: string[];
+  snippet?: string;
+  payload?: {
+    headers?: { name: string; value: string }[];
+  };
+};
+
 type CalendarApiEvent = {
   id: string;
   summary?: string;
@@ -90,6 +100,9 @@ export default function Dashboard() {
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarConnected, setCalendarConnected] = useState(false);
+  const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailLoading, setGmailLoading] = useState(true);
 
   useEffect(() => {
     setToday(new Date());
@@ -137,6 +150,28 @@ export default function Dashboard() {
     }
 
     void loadCalendar();
+
+    async function loadGmail() {
+      try {
+        const response = await fetch("/api/gmail/messages", { cache: "no-store" });
+        if (response.status === 409 || response.status === 401) {
+          setGmailConnected(false);
+          return;
+        }
+        if (!response.ok) throw new Error("Falha ao carregar Gmail.");
+        const data = (await response.json()) as { messages?: GmailApiMessage[] };
+        if (!cancelled) {
+          setGmailMessages(data.messages ?? []);
+          setGmailConnected(true);
+        }
+      } catch {
+        if (!cancelled) setGmailConnected(false);
+      } finally {
+        if (!cancelled) setGmailLoading(false);
+      }
+    }
+
+    void loadGmail();
 
     return () => {
       cancelled = true;
@@ -238,6 +273,13 @@ export default function Dashboard() {
                 className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:block"
               >
                 {calendarConnected ? "Agenda conectada" : "Conectar Agenda"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void signIn("google-gmail", { callbackUrl: "/" })}
+                className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 md:block"
+              >
+                {gmailConnected ? "Gmail conectado" : "Conectar Gmail"}
               </button>
               <button className="relative rounded-xl p-2.5 text-slate-500">
                 <Bell size={19} />
@@ -386,9 +428,35 @@ export default function Dashboard() {
                     action="Abrir Gmail"
                   >
                     <div className="space-y-2">
-                      {emails.map((email) => (
-                        <EmailRow key={email.id} email={email} />
-                      ))}
+                      {gmailLoading ? (
+                        <p className="py-3 text-sm text-slate-400">Carregando Gmail...</p>
+                      ) : !gmailConnected ? (
+                        <div className="py-3">
+                          <p className="text-sm text-slate-500">Seu Gmail ainda não está conectado.</p>
+                          <button
+                            type="button"
+                            onClick={() => void signIn("google-gmail", { callbackUrl: "/" })}
+                            className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                          >
+                            Conectar Gmail
+                          </button>
+                        </div>
+                      ) : gmailMessages.length === 0 ? (
+                        <p className="py-3 text-sm text-slate-400">Nenhum e-mail recente encontrado.</p>
+                      ) : (
+                        gmailMessages.slice(0, 8).map((message) => {
+                          const headers = message.payload?.headers ?? [];
+                          const subject = headers.find((h) => h.name.toLowerCase() === "subject")?.value ?? "(Sem assunto)";
+                          const from = headers.find((h) => h.name.toLowerCase() === "from")?.value ?? "Remetente desconhecido";
+                          return (
+                            <div key={message.id} className="rounded-xl border border-slate-100 p-3">
+                              <p className="text-xs font-semibold text-slate-500">{from}</p>
+                              <p className="mt-1 text-sm font-semibold">{subject}</p>
+                              {message.snippet && <p className="mt-1 line-clamp-2 text-xs text-slate-400">{message.snippet}</p>}
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </Card>
                 </div>
