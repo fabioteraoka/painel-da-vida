@@ -223,6 +223,10 @@ export default function Dashboard() {
     ? Math.round((done / tasks.length) * 100)
     : 0;
 
+  const goToIntegration = (path: string) => {
+    window.location.href = path;
+  };
+
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
       <div className="flex min-h-screen">
@@ -269,14 +273,14 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => void window.location.href = "/api/integrations/google-calendar/connect"}
+                onClick={() => goToIntegration("/api/integrations/google-calendar/connect")}
                 className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:block"
               >
                 {calendarConnected ? "Agenda conectada" : "Conectar Agenda"}
               </button>
               <button
                 type="button"
-                onClick={() => void window.location.href = "/api/integrations/google-gmail/connect"}
+                onClick={() => goToIntegration("/api/integrations/google-gmail/connect")}
                 className="hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 md:block"
               >
                 {gmailConnected ? "Gmail conectado" : "Conectar Gmail"}
@@ -368,7 +372,7 @@ export default function Dashboard() {
                         <p className="text-sm text-slate-500">Sua agenda do Google ainda não está conectada.</p>
                         <button
                           type="button"
-                          onClick={() => void window.location.href = "/api/integrations/google-calendar/connect"}
+                          onClick={() => goToIntegration("/api/integrations/google-calendar/connect")}
                           className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
                         >
                           Conectar Google Calendar
@@ -435,7 +439,7 @@ export default function Dashboard() {
                           <p className="text-sm text-slate-500">Seu Gmail ainda não está conectado.</p>
                           <button
                             type="button"
-                            onClick={() => void window.location.href = "/api/integrations/google-gmail/connect"}
+                            onClick={() => goToIntegration("/api/integrations/google-gmail/connect")}
                             className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
                           >
                             Conectar Gmail
