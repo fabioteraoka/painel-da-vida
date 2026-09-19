@@ -73,6 +73,13 @@ export async function PATCH(
       },
     });
 
+    if (task?.billId) {
+      await prisma.bill.updateMany({
+        where: { id: task.billId, userId: user.id },
+        data: { status: body.completed ? "PAID" : "CONFIRMED" },
+      });
+    }
+
     return NextResponse.json(task);
   } catch (error) {
     console.error("Task PATCH failed:", error);
