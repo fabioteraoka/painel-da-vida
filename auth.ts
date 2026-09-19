@@ -22,7 +22,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-  ],
     Google({
       id: "google-gmail",
       name: "Gmail",
@@ -34,6 +33,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
+  ],
   pages: {
     signIn: "/login",
   },
@@ -52,12 +52,21 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           create: { email: user.email, name: user.name ?? null },
         });
 
-        if ((account?.provider === "google-calendar" || account?.provider === "google-gmail") && account.access_token) {
+        if (
+          (account?.provider === "google-calendar" ||
+            account?.provider === "google-gmail") &&
+          account.access_token
+        ) {
+          const provider =
+            account.provider === "google-gmail"
+              ? "GMAIL"
+              : "GOOGLE_CALENDAR";
+
           await prisma.integration.upsert({
             where: {
               userId_provider: {
                 userId: dbUser.id,
-                provider: account.provider === "google-gmail" ? "GMAIL" : "GOOGLE_CALENDAR",
+                provider,
               },
             },
             update: {
@@ -71,7 +80,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             },
             create: {
               userId: dbUser.id,
-              provider: account.provider === "google-gmail" ? "GMAIL" : "GOOGLE_CALENDAR",
+              provider,
               status: "CONNECTED",
               externalUserId: account.providerAccountId,
               accessToken: account.access_token,
