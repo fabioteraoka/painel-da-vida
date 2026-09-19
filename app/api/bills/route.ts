@@ -44,10 +44,6 @@ export async function PATCH(request: Request) {
     const account=await prisma.paymentAccount.findFirst({where:{id:body.paymentAccountId,userId:user.id,active:true},select:{id:true}});
     if(!account) return NextResponse.json({error:"Conta de pagamento inválida."},{status:400});
   }
-  if(body.responsiblePersonId){
-    const person=await prisma.person.findFirst({where:{id:body.responsiblePersonId,userId:user.id,active:true},select:{id:true}});
-    if(!person) return NextResponse.json({error:"Pessoa responsável inválida."},{status:400});
-  }
   if(body.responsibleType==="OTHER" && !body.responsiblePersonId && !bill.responsiblePersonId){
     return NextResponse.json({error:"Informe a pessoa responsável pela conta."},{status:400});
   }
