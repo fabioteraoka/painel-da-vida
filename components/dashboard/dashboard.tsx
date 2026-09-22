@@ -30,6 +30,7 @@ import {
   Tag as TagIcon,
   Target,
   TrendingDown,
+  Trash2,
   X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
@@ -211,6 +212,7 @@ export default function Dashboard() {
   const [products, setProducts] = useState<MonitoredProductApi[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [priceChecking, setPriceChecking] = useState(false);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
   const [priceCheckMessage, setPriceCheckMessage] = useState<string | null>(null);
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [newProductTitle, setNewProductTitle] = useState("");
@@ -484,6 +486,25 @@ export default function Dashboard() {
       ));
     } catch (error) {
       console.error("Não foi possível dispensar o alerta de preço:", error);
+    }
+  }
+
+  async function handleDeleteProduct(product: MonitoredProductApi) {
+    if (!window.confirm('Apagar "' + product.title + '" do monitoramento?')) return;
+
+    setDeletingProductId(product.id);
+    setPriceCheckMessage(null);
+    try {
+      const response = await fetch("/api/products/" + product.id, { method: "DELETE" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Não foi possível apagar o produto.");
+
+      setProducts((current) => current.filter((item) => item.id !== product.id));
+      setPriceCheckMessage('"' + product.title + '" foi removido do monitoramento.');
+    } catch (error) {
+      setPriceCheckMessage(error instanceof Error ? error.message : "Não foi possível apagar o produto.");
+    } finally {
+      setDeletingProductId(null);
     }
   }
 
@@ -1233,6 +1254,16 @@ export default function Dashboard() {
                                     ) : (
                                       <span className="text-[11px] text-slate-400">Aguardando preço</span>
                                     )}
+                                    <button
+                                      type="button"
+                                      aria-label={"Excluir " + p.title}
+                                      onClick={() => void handleDeleteProduct(p)}
+                                      disabled={deletingProductId === p.id}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      <Trash2 size={13} />
+                                      {deletingProductId === p.id ? "Excluindo..." : "Excluir"}
+                                    </button>
                                   </div>
                                 </div>
                               </div>
