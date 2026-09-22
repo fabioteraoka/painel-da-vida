@@ -24,6 +24,7 @@ import {
   Plus,
   Search,
   Settings,
+  RefreshCw,
   ShoppingCart,
   Sparkles,
   Tag as TagIcon,
@@ -209,6 +210,8 @@ export default function Dashboard() {
   // Price monitoring state
   const [products, setProducts] = useState<MonitoredProductApi[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
+  const [priceChecking, setPriceChecking] = useState(false);
+  const [priceCheckMessage, setPriceCheckMessage] = useState<string | null>(null);
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [newProductTitle, setNewProductTitle] = useState("");
   const [newProductTarget, setNewProductTarget] = useState("");
@@ -445,6 +448,28 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error("Erro ao criar tarefa:", err);
+    }
+  }
+
+  async function handleCheckPrices() {
+    setPriceChecking(true);
+    setPriceCheckMessage(null);
+    try {
+      const response = await fetch("/api/products/check", { method: "POST", cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok && response.status !== 207) {
+        throw new Error(result.error ?? "Não foi possível consultar os preços.");
+      }
+      const refreshed = await fetch("/api/products", { cache: "no-store" });
+      if (!refreshed.ok) throw new Error("Consulta concluída, mas não foi possível atualizar o painel.");
+      setProducts((await refreshed.json()) as MonitoredProductApi[]);
+      setPriceCheckMessage(result.failed
+        ? `Consulta concluída: ${result.updated} atualizados, ${result.failed} com falha.`
+        : `Consulta concluída: ${result.updated} produto(s) atualizado(s).`);
+    } catch (error) {
+      setPriceCheckMessage(error instanceof Error ? error.message : "Falha ao consultar preços.");
+    } finally {
+      setPriceChecking(false);
     }
   }
 
@@ -1065,6 +1090,19 @@ export default function Dashboard() {
                     onActionClick={() => setNewProductOpen((v) => !v)}
                   >
                     <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11px] text-slate-500">Verificação automática diária; consulte manualmente quando quiser.</p>
+                        <button
+                          type="button"
+                          onClick={() => void handleCheckPrices()}
+                          disabled={priceChecking || productsLoading || products.length === 0}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <RefreshCw size={13} className={priceChecking ? "animate-spin" : ""} />
+                          {priceChecking ? "Consultando..." : "Consultar preços agora"}
+                        </button>
+                      </div>
+                      {priceCheckMessage && <p role="status" className="text-xs text-slate-600">{priceCheckMessage}</p>}
                       {newProductOpen && (
                         <form onSubmit={handleAddProduct} className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
                           <h4 className="text-xs font-bold text-slate-800">Novo Produto para Monitorar</h4>
@@ -1574,7 +1612,7 @@ function SidebarContent() {
         </p>
         <Connection label="Google Calendar" status="Sincronizado" color="bg-emerald-500" />
         <Connection label="Gmail API" status="Classificação Ativa" color="bg-emerald-500" />
-        <Connection label="Monitor de Preços" status="Checagem 30m" color="bg-indigo-500" />
+        <Connection label="Monitor de Preços" status="Diário + consulta manual" color="bg-indigo-500" />
       </div>
 
       <div className="mt-auto pt-6">
