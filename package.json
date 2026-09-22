@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 -H 0.0.0.0",
-    "build": "prisma db push && prisma generate && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
     "db:generate": "prisma generate",
@@ -30,8 +30,8 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.0",
+    "prisma": "^6.19.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0",
-    "prisma": "^6.19.0"
+    "typescript": "^5.7.0"
   }
 }
