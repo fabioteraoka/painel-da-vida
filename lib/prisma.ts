@@ -325,7 +325,7 @@ function createMockPrisma(): PrismaClient {
 
   seedStore();
 
-  const matchesWhere = (item: any, where?: Record<string, any>) => {
+  const matchesWhere = (item: any, where?: Record<string, any>): boolean => {
     if (!where) return true;
     return Object.entries(where).every(([key, expected]) => {
       if (key === "OR") return Array.isArray(expected) && expected.some((condition) => matchesWhere(item, condition));
