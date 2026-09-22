@@ -16,7 +16,7 @@ Abra http://localhost:3000
 Para usar os fixtures locais, defina `DEMO_MODE=true` e `NEXT_PUBLIC_DEMO_MODE=true` no `.env`. Sem essas opções, o servidor não substitui falhas de banco ou OAuth por dados simulados.
 
 ## Banco
-A V1 usa dados demonstrativos. O schema Prisma já está preparado.
+Use os dados de demonstração somente com os dois flags de demo ativados. O schema Prisma prepara os modelos usados pela aplicação.
 
 ```bash
 cp .env.example .env
@@ -43,11 +43,11 @@ O projeto usa PostgreSQL com Prisma. Para ativar a persistência real na Vercel:
 3. Faça um novo deploy após salvar a variável.
 4. No primeiro deploy com o banco disponível, execute `npx prisma db push` em um ambiente que tenha acesso à mesma `DATABASE_URL`, ou use uma etapa de migração no CI/CD.
 
-A API de tarefas fica em `/api/tasks` e já possui fallback de erro quando o banco ainda não está configurado.
+A API de tarefas fica em `/api/tasks`; sem banco, ela retorna erro fora do modo demo.
 
 ### Próxima etapa
 
-Depois que o PostgreSQL estiver conectado, o painel poderá migrar as tarefas do armazenamento local para o banco. Em seguida entraremos com autenticação e Google Calendar/Gmail.
+Depois que PostgreSQL, OAuth e integrações estiverem configurados, o painel trabalha com os dados reais. Use o modo demo apenas para desenvolvimento e demonstrações.
 
 
 ## Modo demo e produção
