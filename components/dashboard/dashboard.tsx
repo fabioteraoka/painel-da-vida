@@ -38,9 +38,14 @@ import { initialTasks, type Task } from "@/lib/mock-data";
 
 type GmailApiMessage = {
   id: string;
+  taskId?: string | null;
   threadId?: string;
+  sender?: string;
+  senderName?: string;
+  subject?: string;
   labelIds?: string[];
   snippet?: string;
+  internalDate?: string;
   dashboardCategory?: "RESPOND_TODAY" | "FOLLOW_UP" | "INFORMATIVE" | "NOISE";
   dashboardReason?: string;
   payload?: {
@@ -199,6 +204,8 @@ export default function Dashboard() {
   const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailError, setGmailError] = useState(false);
+  const [creatingEmailTaskId, setCreatingEmailTaskId] = useState<string | null>(null);
+  const [emailTaskError, setEmailTaskError] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [bills, setBills] = useState<BillApi[]>([]);
@@ -450,6 +457,50 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error("Erro ao criar tarefa:", err);
+    }
+  }
+
+  async function handleCreateTaskFromEmail(message: GmailApiMessage) {
+    const headers = message.payload?.headers ?? [];
+    const header = (name: string) => headers.find((item) => item.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+    const subject = header("subject") || message.subject || "Ação de e-mail";
+    const sender = header("from") || message.sender || message.senderName || "Remetente desconhecido";
+    const dateHeader = header("date");
+    const receivedDate = message.internalDate
+      ? new Date(Number(message.internalDate))
+      : dateHeader ? new Date(dateHeader) : new Date();
+    const receivedAt = Number.isNaN(receivedDate.getTime()) ? new Date().toISOString() : receivedDate.toISOString();
+
+    setCreatingEmailTaskId(message.id);
+    setEmailTaskError(null);
+    try {
+      const response = await fetch("/api/gmail/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          externalId: message.id,
+          threadId: message.threadId,
+          sender,
+          subject,
+          snippet: message.snippet ?? "",
+          category: message.dashboardCategory,
+          receivedAt,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Não foi possível criar a tarefa.");
+
+      const task = result.task as ApiTask;
+      setTasks((current) => current.some((item) => item.id === task.id)
+        ? current
+        : [mapApiTask(task), ...current]);
+      setGmailMessages((current) => current.map((item) => item.id === message.id
+        ? { ...item, taskId: task.id }
+        : item));
+    } catch (error) {
+      setEmailTaskError(error instanceof Error ? error.message : "Não foi possível criar a tarefa.");
+    } finally {
+      setCreatingEmailTaskId(null);
     }
   }
 
@@ -1465,11 +1516,30 @@ export default function Dashboard() {
                                   Motivo: {message.dashboardReason}
                                 </p>
                               )}
+                              {(category === "RESPOND_TODAY" || category === "FOLLOW_UP") && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  {message.taskId ? (
+                                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                                      <Check size={12} /> Tarefa criada e salva
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={creatingEmailTaskId === message.id}
+                                      onClick={() => void handleCreateTaskFromEmail(message)}
+                                      className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                                    >
+                                      {creatingEmailTaskId === message.id ? "Salvando…" : "Criar tarefa"}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })
                       )}
                     </div>
+                    {emailTaskError && <p role="alert" className="mt-2 text-xs text-red-600">{emailTaskError}</p>}
                   </Card>
                 </div>
 

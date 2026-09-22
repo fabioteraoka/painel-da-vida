@@ -32,9 +32,11 @@ model Task {
   dueAt       DateTime?
   completedAt DateTime?
   billId      String?       @unique
+  emailId     String?      @unique
   userId      String
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   bill        Bill?      @relation(fields: [billId], references: [id], onDelete: SetNull)
+  email       Email?     @relation(fields: [emailId], references: [id], onDelete: SetNull)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -75,12 +77,14 @@ model Email {
   source      String        @default("local")
   userId      String
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task        Task?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   @@index([userId])
   @@index([receivedAt])
   @@index([needsAction])
+  @@unique([userId, externalId])
 }
 
 model Person {

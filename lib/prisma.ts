@@ -473,6 +473,16 @@ function createMockPrisma(): PrismaClient {
             break;
           }
         }
+      } else if (args?.where?.userId_externalId) {
+        for (const v of store.values()) {
+          if (
+            v.userId === args.where.userId_externalId.userId &&
+            v.externalId === args.where.userId_externalId.externalId
+          ) {
+            found = v;
+            break;
+          }
+        }
       }
       if (found) {
         const updated = { ...found, ...(args?.update ?? {}), updatedAt: new Date() };

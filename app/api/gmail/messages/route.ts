@@ -198,6 +198,33 @@ async function fetchAndClassifyMessages(token: string, includeNoise = false) {
   return items.filter(Boolean);
 }
 
+async function attachTaskLinks(userId: string, messages: Array<{ id: string; [key: string]: any }>) {
+  const externalIds = messages.map((message) => message.id).filter(Boolean);
+  if (externalIds.length === 0) return messages;
+
+  const emails = await prisma.email.findMany({
+    where: { userId, externalId: { in: externalIds } },
+    select: { id: true, externalId: true },
+  });
+  if (emails.length === 0) return messages;
+
+  const emailIds = emails.map((email: { id: string }) => email.id);
+  const tasks = await prisma.task.findMany({
+    where: { userId, emailId: { in: emailIds } },
+    select: { id: true, emailId: true },
+  });
+  const taskByExternalId = new Map<string, string>();
+  const externalIdByEmailId = new Map<string, string>();
+  for (const email of emails as Array<{ id: string; externalId: string }>) {
+    externalIdByEmailId.set(email.id, email.externalId);
+  }
+  for (const task of tasks as Array<{ id: string; emailId: string | null }>) {
+    const externalId = task.emailId ? externalIdByEmailId.get(task.emailId) : undefined;
+    if (externalId) taskByExternalId.set(externalId, task.id);
+  }
+  return messages.map((message) => ({ ...message, taskId: taskByExternalId.get(message.id) ?? null }));
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await auth();
@@ -312,12 +339,13 @@ export async function GET(req: NextRequest) {
         },
       ];
 
+      const visibleMessages = includeNoise
+        ? mockGmailMessages
+        : mockGmailMessages.filter((m) => m.dashboardCategory !== "NOISE");
       return NextResponse.json({
         connected: false,
         isSimulated: true,
-        messages: includeNoise
-          ? mockGmailMessages
-          : mockGmailMessages.filter((m) => m.dashboardCategory !== "NOISE"),
+        messages: await attachTaskLinks(user.id, visibleMessages),
       });
     }
 
@@ -331,12 +359,12 @@ export async function GET(req: NextRequest) {
 
     try {
       const messages = await fetchAndClassifyMessages(token, includeNoise);
-      return NextResponse.json({ connected: true, messages });
+      return NextResponse.json({ connected: true, messages: await attachTaskLinks(user.id, messages as any[]) });
     } catch (e: any) {
       if (integration.refreshToken) {
         token = await refreshGoogleToken(user.id, integration.refreshToken);
         const messages = await fetchAndClassifyMessages(token, includeNoise);
-        return NextResponse.json({ connected: true, messages });
+        return NextResponse.json({ connected: true, messages: await attachTaskLinks(user.id, messages as any[]) });
       }
       throw e;
     }
