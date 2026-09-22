@@ -214,7 +214,7 @@ async function findPriceWithAi(product: { name: string; url: string }): Promise<
     throw new Error("A leitura automática não encontrou o preço na página. Para usar a busca com IA, configure AI_GATEWAY_API_KEY na Vercel.");
   }
 
-  const asin = product.url.match(/\\/dp\\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase();
+  const asin = product.url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase();
   const today = new Date().toISOString().slice(0, 10);
   const { text } = await generateText({
     model: aiModel,
@@ -235,7 +235,7 @@ Responda somente JSON neste formato:
 {"price": número ou null, "currency":"BRL", "matchedProduct":true ou false, "sourceUrl":"URL HTTPS da página que mostra o preço ou string vazia", "evidence":"trecho curto que mostra o preço e o identificador do produto", "confidence": número de 0 a 1}`,
   });
 
-  const json = text.match(/\\{[\\s\\S]*\\}/)?.[0];
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) return null;
   try {
     const result = JSON.parse(json) as Record<string, unknown>;
@@ -250,7 +250,7 @@ Responda somente JSON neste formato:
       result.matchedProduct !== true ||
       confidence < 0.9 ||
       !evidence ||
-      !/^https:\\/\\//i.test(sourceUrl) ||
+      !/^https:\/\//i.test(sourceUrl) ||
       (asin && !identityEvidence.includes(asin))
     ) return null;
     return { price, currency: "BRL", sourceUrl, evidence };
