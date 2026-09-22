@@ -1203,7 +1203,9 @@ export default function Dashboard() {
                                         </span>
                                       ))}
                                       {p.lastCheckError && (
-                                        <span className="text-[10px] font-medium text-rose-700">Falha na coleta: {p.lastCheckError}</span>
+                                        <span className="text-[10px] font-medium text-rose-700">
+                                          Última tentativa falhou{p.lastAttemptedAt ? ` em ${new Date(p.lastAttemptedAt).toLocaleString("pt-BR")}` : ""}: {p.lastCheckError}
+                                        </span>
                                       )}
                                       {p.lastChecked && (
                                         <span className="text-[10px] text-slate-400">Último preço válido: {new Date(p.lastChecked).toLocaleString("pt-BR")}</span>
