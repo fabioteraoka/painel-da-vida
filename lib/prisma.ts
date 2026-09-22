@@ -537,7 +537,7 @@ try {
   realClient = null;
 }
 
-const mockFallback = isDemoMode ? createMockPrisma() : null;
+const mockFallback = isDemoMode ? globalForPrisma.prisma ?? createMockPrisma() : null;
 
 const unavailablePrisma = new Proxy({}, {
   get: (_, model: string) => {
