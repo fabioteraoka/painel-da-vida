@@ -2,6 +2,8 @@ import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
+export const isDemoMode = process.env.DEMO_MODE === "true";
+
 function createMockPrisma(): PrismaClient {
   console.info("[Painel da Vida] Operando com armazenamento local otimizado (Zero-Config)");
   const inMemoryStore = new Map<string, Map<string, any>>();
@@ -323,35 +325,60 @@ function createMockPrisma(): PrismaClient {
 
   seedStore();
 
+  const matchesWhere = (item: any, where?: Record<string, any>) => {
+    if (!where) return true;
+    return Object.entries(where).every(([key, expected]) => {
+      if (key === "OR") return Array.isArray(expected) && expected.some((condition) => matchesWhere(item, condition));
+      if (key === "AND") return Array.isArray(expected) && expected.every((condition) => matchesWhere(item, condition));
+      const actual = item[key];
+      if (expected && typeof expected === "object" && !(expected instanceof Date) && !Array.isArray(expected)) {
+        return Object.entries(expected).every(([operator, operand]) => {
+          if (operator === "mode") return true;
+          if (operator === "in") return Array.isArray(operand) && operand.includes(actual);
+          if (operator === "notIn") return Array.isArray(operand) && !operand.includes(actual);
+          if (operator === "not") return actual !== operand;
+          if (operator === "equals") return actual === operand;
+          if (operator === "contains") {
+            const left = String(actual ?? "");
+            const right = String(operand ?? "");
+            return expected.mode === "insensitive"
+              ? left.toLowerCase().includes(right.toLowerCase())
+              : left.includes(right);
+          }
+          if (operator === "lte") return actual != null && new Date(actual).getTime() <= new Date(operand as any).getTime();
+          if (operator === "lt") return actual != null && new Date(actual).getTime() < new Date(operand as any).getTime();
+          if (operator === "gte") return actual != null && new Date(actual).getTime() >= new Date(operand as any).getTime();
+          if (operator === "gt") return actual != null && new Date(actual).getTime() > new Date(operand as any).getTime();
+          return actual === expected;
+        });
+      }
+      return actual === expected;
+    });
+  };
+
   const createModelProxy = (model: string) => ({
     findMany: async (args?: any) => {
-      let items = Array.from(getStore(model).values());
-      if (args?.where?.userId) {
-        items = items.filter((item: any) => item.userId === args.where.userId);
+      let items = Array.from(getStore(model).values()).filter((item: any) => matchesWhere(item, args?.where));
+      const orderBy = Array.isArray(args?.orderBy) ? args.orderBy : args?.orderBy ? [args.orderBy] : [];
+      for (const order of [...orderBy].reverse()) {
+        const [key, direction] = Object.entries(order)[0] ?? [];
+        if (!key) continue;
+        items.sort((a: any, b: any) => {
+          const left = a[key] instanceof Date ? a[key].getTime() : a[key];
+          const right = b[key] instanceof Date ? b[key].getTime() : b[key];
+          if (left === right) return 0;
+          return (left < right ? -1 : 1) * (direction === "desc" ? -1 : 1);
+        });
       }
-      if (args?.where?.status) {
-        if (typeof args.where.status === "object" && args.where.status.not) {
-          items = items.filter((item: any) => item.status !== args.where.status.not);
-        } else if (typeof args.where.status === "string") {
-          items = items.filter((item: any) => item.status === args.where.status);
-        }
-      }
-      if (args?.where?.active !== undefined) {
-        items = items.filter((item: any) => item.active === args.where.active);
-      }
+      if (args?.skip) items = items.slice(args.skip);
+      if (typeof args?.take === "number") items = items.slice(0, args.take);
       if (args?.include) {
         items = items.map((item: any) => populateRelations(model, item, args.include));
       }
       return items;
     },
     findFirst: async (args?: any) => {
-      let items = Array.from(getStore(model).values());
-      if (args?.where?.userId) {
-        items = items.filter((item: any) => item.userId === args.where.userId);
-      }
-      if (args?.where?.id) {
-        items = items.filter((item: any) => item.id === args.where.id);
-      }
+      const items = Array.from(getStore(model).values()).filter((item: any) => matchesWhere(item, args?.where));
       if (items.length === 0) return null;
       const res = items[0];
       return args?.include ? populateRelations(model, res, args.include) : res;
@@ -385,6 +412,8 @@ function createMockPrisma(): PrismaClient {
             break;
           }
         }
+      } else {
+        found = Array.from(store.values()).find((item: any) => matchesWhere(item, args?.where)) ?? null;
       }
       if (!found) return null;
       return args?.include ? populateRelations(model, found, args.include) : found;
@@ -411,7 +440,17 @@ function createMockPrisma(): PrismaClient {
       if (args?.where?.id) store.set(args.where.id, updated);
       return args?.include ? populateRelations(model, updated, args.include) : updated;
     },
-    updateMany: async () => ({ count: 1 }),
+    updateMany: async (args?: any) => {
+      const store = getStore(model);
+      let count = 0;
+      for (const [id, item] of store.entries()) {
+        if (matchesWhere(item, args?.where)) {
+          store.set(id, { ...item, ...(args?.data ?? {}), updatedAt: new Date() });
+          count++;
+        }
+      }
+      return { count };
+    },
     upsert: async (args?: any) => {
       const store = getStore(model);
       let found: any = null;
@@ -449,22 +488,32 @@ function createMockPrisma(): PrismaClient {
       if (args?.where?.id) getStore(model).delete(args.where.id);
       return {};
     },
-    deleteMany: async () => ({ count: 0 }),
+    deleteMany: async (args?: any) => {
+      const store = getStore(model);
+      let count = 0;
+      for (const [id, item] of store.entries()) {
+        if (matchesWhere(item, args?.where)) {
+          store.delete(id);
+          count++;
+        }
+      }
+      return { count };
+    },
     count: async (args?: any) => {
       const items = Array.from(getStore(model).values());
-      if (args?.where?.userId) {
-        return items.filter((item: any) => item.userId === args.where.userId).length;
-      }
-      return items.length;
+      return items.filter((item: any) => matchesWhere(item, args?.where)).length;
     },
   });
 
-  return new Proxy(
+  const mockPrisma = new Proxy(
     {},
     {
       get: (_, prop: string) => {
         if (prop === "$queryRaw" || prop === "$executeRaw") {
           return async () => [{ 1: 1 }];
+        }
+        if (prop === "$transaction") {
+          return async (operation: any) => typeof operation === "function" ? operation(mockPrisma) : Promise.all(operation);
         }
         if (prop.startsWith("$")) {
           return async () => null;
@@ -472,7 +521,8 @@ function createMockPrisma(): PrismaClient {
         return createModelProxy(prop);
       },
     },
-  ) as unknown as PrismaClient;
+  );
+  return mockPrisma as unknown as PrismaClient;
 }
 
 let realClient: PrismaClient | null = null;
@@ -482,11 +532,21 @@ try {
       log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
     });
   }
-} catch {
+} catch (error) {
+  if (!isDemoMode) throw error;
   realClient = null;
 }
 
-const mockFallback = createMockPrisma();
+const mockFallback = isDemoMode ? createMockPrisma() : null;
+
+const unavailablePrisma = new Proxy({}, {
+  get: (_, model: string) => {
+    if (model.startsWith("$")) return async () => { throw new Error("DATABASE_URL obrigatória e banco indisponível. Configure o banco ou habilite DEMO_MODE explicitamente."); };
+    return new Proxy({}, {
+      get: () => async () => { throw new Error("DATABASE_URL obrigatória e banco indisponível. Configure o banco ou habilite DEMO_MODE explicitamente."); },
+    });
+  },
+}) as unknown as PrismaClient;
 
 export const prisma =
   globalForPrisma.prisma ??
@@ -503,8 +563,9 @@ export const prisma =
                     try {
                       return await method.apply(modelTarget, args);
                     } catch (err: any) {
+                      if (!isDemoMode || !mockFallback) throw err;
                       console.warn(
-                        `[AI Studio] Prisma error on ${prop}.${modelProp}, falling back to mock:`,
+                        `[Painel da Vida] Prisma error on ${prop}.${modelProp}, falling back to demo data:`,
                         err?.message || err,
                       );
                       const mockModel = (mockFallback as any)[prop];
@@ -524,8 +585,9 @@ export const prisma =
               try {
                 return await original.apply(target, args);
               } catch (err: any) {
+                if (!isDemoMode || !mockFallback) throw err;
                 console.warn(
-                  `[AI Studio] Prisma error on ${prop}, falling back to mock:`,
+                  `[Painel da Vida] Prisma error on ${prop}, falling back to demo data:`,
                   err?.message || err,
                 );
                 const mockMethod = (mockFallback as any)[prop];
@@ -539,7 +601,9 @@ export const prisma =
           return original;
         },
       })
-    : mockFallback);
+    : isDemoMode && mockFallback
+      ? mockFallback
+      : unavailablePrisma);
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (isDemoMode || process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 

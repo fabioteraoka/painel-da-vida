@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isDemoMode } from "@/lib/prisma";
 import { classifyBillEmail } from "@/lib/bill-ai";
 
 export const runtime="nodejs";
@@ -46,6 +46,7 @@ async function ensureBillTask(userId:string,bill:{id:string;merchant:string|null
 export async function scanForUser(userId:string){
   const integration=await prisma.integration.findUnique({where:{userId_provider:{userId,provider:"GMAIL"}}});
   if (!integration?.accessToken) {
+    if (!isDemoMode) throw new Error("Conecte o Gmail antes de verificar novas contas.");
     const tenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
     const dueSoonBills = await prisma.bill.findMany({
       where: { userId, status: { in: ["NEEDS_REVIEW", "CONFIRMED"] }, dueDate: { lte: tenDays } },

@@ -32,7 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
-import { alerts, calendarEvents as mockCalendarEvents, emails as mockEmails, initialTasks, type Task } from "@/lib/mock-data";
+import { initialTasks, type Task } from "@/lib/mock-data";
 
 type GmailApiMessage = {
   id: string;
@@ -94,7 +94,11 @@ type MonitoredProductApi = {
   source: string | null;
   active: boolean;
   lastChecked: string | null;
+  lastAttemptedAt?: string | null;
+  lastCheckError?: string | null;
   isOpportunity: boolean;
+  alerts?: { id: string; price: number; targetPrice: number; createdAt: string }[];
+  priceHistory?: { price: number; currency: string; source: string | null; observedAt: string }[];
 };
 
 type ApiTask = {
@@ -177,9 +181,11 @@ function detectCalendarConflicts(events: CalendarApiEvent[]): Set<string> {
   return conflictIds;
 }
 
+const useDemoFixtures = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
 export default function Dashboard() {
   const [tasks, setTasks] = useState<DashboardTask[]>(
-    initialTasks.map((task) => ({ ...task, id: String(task.id) })),
+    useDemoFixtures ? initialTasks.map((task) => ({ ...task, id: String(task.id) })) : [],
   );
   const [today] = useState<Date>(() => new Date());
   const [mobile, setMobile] = useState(false);
@@ -206,7 +212,6 @@ export default function Dashboard() {
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [newProductTitle, setNewProductTitle] = useState("");
   const [newProductTarget, setNewProductTarget] = useState("");
-  const [newProductCurrent, setNewProductCurrent] = useState("");
   const [newProductSource, setNewProductSource] = useState("Amazon");
   const [newProductUrl, setNewProductUrl] = useState("");
 
@@ -443,6 +448,20 @@ export default function Dashboard() {
     }
   }
 
+  async function markPriceAlertRead(productId: string, alertId: string) {
+    try {
+      const response = await fetch(`/api/price-alerts/${alertId}`, { method: "PATCH" });
+      if (!response.ok) return;
+      setProducts((current) => current.map((product) =>
+        product.id === productId
+          ? { ...product, alerts: product.alerts?.filter((alert) => alert.id !== alertId) }
+          : product,
+      ));
+    } catch (error) {
+      console.error("Não foi possível dispensar o alerta de preço:", error);
+    }
+  }
+
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!newProductTitle.trim() || !newProductTarget) return;
@@ -454,7 +473,6 @@ export default function Dashboard() {
         body: JSON.stringify({
           title: newProductTitle.trim(),
           targetPrice: parseFloat(newProductTarget),
-          currentPrice: newProductCurrent ? parseFloat(newProductCurrent) : parseFloat(newProductTarget),
           source: newProductSource,
           url: newProductUrl.trim() || null,
         }),
@@ -465,7 +483,6 @@ export default function Dashboard() {
         setProducts((prev) => [created, ...prev]);
         setNewProductTitle("");
         setNewProductTarget("");
-        setNewProductCurrent("");
         setNewProductUrl("");
         setNewProductOpen(false);
       }
@@ -1068,14 +1085,6 @@ export default function Dashboard() {
                               onChange={(e) => setNewProductTarget(e.target.value)}
                               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
                             />
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="Preço atual (ex.: 269.00)"
-                              value={newProductCurrent}
-                              onChange={(e) => setNewProductCurrent(e.target.value)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
-                            />
                             <select
                               value={newProductSource}
                               onChange={(e) => setNewProductSource(e.target.value)}
@@ -1089,7 +1098,9 @@ export default function Dashboard() {
                             </select>
                           </div>
                           <input
-                            placeholder="Link do produto (opcional)"
+                            required
+                            type="url"
+                            placeholder="Link HTTPS do produto (obrigatório)"
                             value={newProductUrl}
                             onChange={(e) => setNewProductUrl(e.target.value)}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
@@ -1141,11 +1152,23 @@ export default function Dashboard() {
                                     </div>
                                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                                       <span>Limite: <strong className="text-slate-800">R$ {p.targetPrice.toFixed(2)}</strong></span>
-                                      {p.currentPrice && (
+                                      {p.currentPrice !== null && p.currentPrice !== undefined && (
                                         <span>Atual: <strong className={isDeal ? "text-emerald-700 font-bold" : "text-slate-700"}>R$ {p.currentPrice.toFixed(2)}</strong></span>
                                       )}
-                                      {p.lowestPrice && (
+                                      {p.lowestPrice !== null && p.lowestPrice !== undefined && (
                                         <span className="text-[11px] text-slate-400">Menor: R$ {p.lowestPrice.toFixed(2)}</span>
+                                      )}
+                                      {p.alerts?.map((alert) => (
+                                        <span key={alert.id} className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                          Alerta: atingiu R$ {alert.targetPrice.toFixed(2)}
+                                          <button type="button" onClick={() => void markPriceAlertRead(p.id, alert.id)} className="underline">Dispensar</button>
+                                        </span>
+                                      ))}
+                                      {p.lastCheckError && (
+                                        <span className="text-[10px] font-medium text-rose-700">Falha na coleta: {p.lastCheckError}</span>
+                                      )}
+                                      {p.lastChecked && (
+                                        <span className="text-[10px] text-slate-400">Último preço válido: {new Date(p.lastChecked).toLocaleString("pt-BR")}</span>
                                       )}
                                     </div>
                                   </div>

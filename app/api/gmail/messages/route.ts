@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { NextResponse, NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isDemoMode } from "@/lib/prisma";
 import { generateObject } from "ai";
 import { aiModel, isAiGatewayAvailable } from "@/lib/ai-gateway";
 import { z } from "zod";
@@ -210,6 +210,7 @@ export async function GET(req: NextRequest) {
       where: { userId_provider: { userId: user.id, provider: "GMAIL" } },
     });
     if (!integration?.accessToken) {
+      if (!isDemoMode) return NextResponse.json({ error: "Conecte o Gmail para consultar mensagens." }, { status: 409 });
       const now = new Date();
       const includeNoise = req.nextUrl?.searchParams.get("includeNoise") === "true";
       const mockGmailMessages = [

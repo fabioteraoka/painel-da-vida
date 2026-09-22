@@ -13,6 +13,8 @@ npm run dev
 
 Abra http://localhost:3000
 
+Para usar os fixtures locais, defina `DEMO_MODE=true` e `NEXT_PUBLIC_DEMO_MODE=true` no `.env`. Sem essas opções, o servidor não substitui falhas de banco ou OAuth por dados simulados.
+
 ## Banco
 A V1 usa dados demonstrativos. O schema Prisma já está preparado.
 
@@ -46,3 +48,16 @@ A API de tarefas fica em `/api/tasks` e já possui fallback de erro quando o ban
 ### Próxima etapa
 
 Depois que o PostgreSQL estiver conectado, o painel poderá migrar as tarefas do armazenamento local para o banco. Em seguida entraremos com autenticação e Google Calendar/Gmail.
+
+
+## Modo demo e produção
+
+O modo demo deve ser ativado explicitamente com `DEMO_MODE=true` e `NEXT_PUBLIC_DEMO_MODE=true` para que servidor e interface usem os mesmos fixtures. Ele usa dados simulados em memória e pode manter alterações durante a vida do processo; não é armazenamento durável e reinicializações podem restaurar os dados de demonstração. O seed é aplicado somente na criação do armazenamento demo, não a cada leitura ou alteração.
+
+Em produção, use `DEMO_MODE=false` (ou deixe a variável ausente), configure `DATABASE_URL`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` e `CRON_SECRET`. Falhas do PostgreSQL são retornadas como erros e não trocam para dados demo. Conecte Gmail e Google Calendar para consultar essas integrações; sem conexão, as rotas informam que ela está ausente.
+
+## Monitoramento de preços
+
+Cadastre cada produto com uma URL HTTPS pública que exponha preço em JSON-LD Product/Offer, metadados `product:price:amount` / `og:price:amount`, ou `itemprop=price`. A cada coleta o servidor valida o destino público, baixa a página, normaliza o preço BRL, grava `PriceHistory`, atualiza atual/mínimo/máximo/média e cria um `PriceAlert` quando o preço alcança o alvo. Falhas de coleta aparecem no resultado do cron; nenhum preço simulado é usado em produção.
+
+Configure `CRON_SECRET` na Vercel. O agendamento em `vercel.json` executa a coleta a cada 30 minutos; confirme que o plano da Vercel do projeto aceita essa frequência. O primeiro deploy com o novo schema também precisa aplicar `npx prisma db push` ou uma migração Prisma equivalente antes de chamar essas rotas.

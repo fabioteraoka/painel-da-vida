@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isDemoMode } from "@/lib/prisma";
 import { initialTasks } from "@/lib/mock-data";
 
 async function getCurrentUser() {
@@ -32,6 +32,7 @@ function dueDate(label: string) {
 }
 
 async function seedDemoTasks(userId: string) {
+  if (!isDemoMode) return;
   const count = await prisma.task.count({ where: { userId } });
   if (count > 0) return;
 

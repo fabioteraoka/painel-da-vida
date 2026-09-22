@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { prisma } from "@/lib/prisma";
+import { prisma, isDemoMode } from "@/lib/prisma";
 
 const GOOGLE_CALENDAR_SCOPE =
   "https://www.googleapis.com/auth/calendar.readonly";
@@ -9,17 +9,21 @@ const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const googleClientId =
   process.env.AUTH_GOOGLE_ID ??
   process.env.GOOGLE_CLIENT_ID ??
-  "painel-da-vida-default-client-id";
+  (isDemoMode ? "demo-google-client-id" : "");
 const googleClientSecret =
   process.env.AUTH_GOOGLE_SECRET ??
   process.env.GOOGLE_CLIENT_SECRET ??
-  "painel-da-vida-default-client-secret";
+  (isDemoMode ? "demo-google-client-secret" : "");
+
+if (!isDemoMode && (!googleClientId || !googleClientSecret || !(process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET))) {
+  throw new Error("Configure AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET e AUTH_SECRET para executar em produção.");
+}
 
 const nextAuth = NextAuth({
   secret:
     process.env.AUTH_SECRET ??
     process.env.NEXTAUTH_SECRET ??
-    "painel-da-vida-mock-secret-key-studio-12345",
+    (isDemoMode ? "painel-da-vida-demo-secret-key" : undefined),
   providers: [
     Google({
       clientId: googleClientId,
@@ -98,7 +102,7 @@ const nextAuth = NextAuth({
         return true;
       } catch (error) {
         console.error("Google login/integration setup failed:", error);
-        return true;
+        return isDemoMode;
       }
     },
   },
@@ -122,6 +126,8 @@ export async function auth() {
   } catch {
     // Falha silenciosa para o perfil padrão
   }
+
+  if (!isDemoMode) return null;
 
   return {
     user: DEFAULT_USER,
