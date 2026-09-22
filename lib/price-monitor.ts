@@ -100,7 +100,27 @@ function parsePrice(value: unknown): number | null {
   const cleaned = value.replace(/[^\d.,-]/g, "").trim();
   if (!cleaned) return null;
   let normalized = cleaned;
-  if (cleaned.includes(",")) normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  const comma = cleaned.lastIndexOf(",");
+  const dot = cleaned.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    normalized = comma > dot
+      ? cleaned.replace(/\./g, "").replace(",", ".")
+      : cleaned.replace(/,/g, "");
+  } else if (comma >= 0) {
+    const groups = cleaned.split(",");
+    normalized = groups.length > 1 && groups.at(-1)?.length === 3
+      ? groups.join("")
+      : groups.slice(0, -1).join("") + "." + groups.at(-1);
+  } else if (dot >= 0) {
+    const groups = cleaned.split(".");
+    if (groups.length > 2 && groups.slice(1).every((group) => group.length === 3)) {
+      normalized = groups.join("");
+    } else if (groups.at(-1)?.length === 3) {
+      normalized = groups.join("");
+    } else if (groups.length > 2) {
+      normalized = groups.slice(0, -1).join("") + "." + groups.at(-1);
+    }
+  }
   const price = Number(normalized);
   return Number.isFinite(price) && price > 0 ? price : null;
 }
