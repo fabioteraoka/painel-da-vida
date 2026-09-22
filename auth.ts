@@ -15,16 +15,18 @@ const googleClientSecret =
   process.env.GOOGLE_CLIENT_SECRET ??
   (isDemoMode ? "demo-google-client-secret" : "");
 
-if (!isDemoMode && (!googleClientId || !googleClientSecret || !(process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET))) {
-  throw new Error("Configure AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET e AUTH_SECRET para executar em produção.");
-}
+const hasGoogleCredentials = Boolean(googleClientId && googleClientSecret);
+const hasAuthSecret = Boolean(process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET);
+const isAuthConfigured = isDemoMode || (hasGoogleCredentials && hasAuthSecret);
 
 const nextAuth = NextAuth({
   secret:
     process.env.AUTH_SECRET ??
     process.env.NEXTAUTH_SECRET ??
     (isDemoMode ? "painel-da-vida-demo-secret-key" : undefined),
-  providers: [
+  // Do not fail the production build when runtime secrets are not available in the build environment.
+  // The auth() guard below reports the missing configuration on requests.
+  providers: hasGoogleCredentials ? [
     Google({
       clientId: googleClientId,
       clientSecret: googleClientSecret,
@@ -37,7 +39,7 @@ const nextAuth = NextAuth({
         },
       },
     }),
-  ],
+  ] : [],
   pages: {
     signIn: "/login",
   },
@@ -118,6 +120,10 @@ export const DEFAULT_USER = {
 };
 
 export async function auth() {
+  if (!isAuthConfigured) {
+    throw new Error("Configure AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET e AUTH_SECRET na Vercel para usar autenticação em produção.");
+  }
+
   try {
     const session = await nextAuth.auth();
     if (session?.user?.email) {
