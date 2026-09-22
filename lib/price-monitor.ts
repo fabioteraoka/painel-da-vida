@@ -1,5 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { generateText, gateway, stepCountIs } from "ai";
+import { aiModel, isAiGatewayAvailable } from "@/lib/ai-gateway";
 import { prisma } from "@/lib/prisma";
 
 type CollectedPrice = { price: number; currency: string; source: string; observedAt: Date };
@@ -205,14 +207,80 @@ function extractStructuredPrice(html: string, defaultCurrency: string): { price:
   return null;
 }
 
-export async function collectPrice(product: { url: string | null; source: string | null }): Promise<CollectedPrice> {
+type AiPriceResult = { price: number; currency: "BRL"; sourceUrl: string; evidence: string };
+
+async function findPriceWithAi(product: { name: string; url: string }): Promise<AiPriceResult | null> {
+  if (!isAiGatewayAvailable()) {
+    throw new Error("A leitura automática não encontrou o preço na página. Para usar a busca com IA, configure AI_GATEWAY_API_KEY na Vercel.");
+  }
+
+  const asin = product.url.match(/\\/dp\\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase();
+  const today = new Date().toISOString().slice(0, 10);
+  const { text } = await generateText({
+    model: aiModel,
+    tools: {
+      parallel_search: gateway.tools.parallelSearch({ mode: "one-shot", maxResults: 5 }),
+    },
+    stopWhen: stepCountIs(3),
+    maxOutputTokens: 400,
+    prompt: `Você está consultando um preço atual para um monitor de preços. Hoje é ${today}.
+Produto informado: ${product.name}
+URL cadastrada: ${product.url}
+Identificador ASIN, quando presente: ${asin ?? "não identificado"}
+
+Use a busca na web para encontrar o preço atual em reais (BRL) do MESMO produto/variante. Não use memória do modelo. Não estime, não converta moedas, não use preço antigo, parcelamento, preço riscado, resultado de produto parecido ou valor sem evidência atual.
+Aceite somente se um resultado da busca mostrar claramente o preço atual e confirmar o mesmo ASIN ${asin ?? "ou o modelo/variante exatos"}.
+Se não encontrar evidência confiável, retorne null.
+Responda somente JSON neste formato:
+{"price": número ou null, "currency":"BRL", "matchedProduct":true ou false, "sourceUrl":"URL HTTPS da página que mostra o preço ou string vazia", "evidence":"trecho curto que mostra o preço e o identificador do produto", "confidence": número de 0 a 1}`,
+  });
+
+  const json = text.match(/\\{[\\s\\S]*\\}/)?.[0];
+  if (!json) return null;
+  try {
+    const result = JSON.parse(json) as Record<string, unknown>;
+    const price = parsePrice(result.price);
+    const confidence = Number(result.confidence);
+    const sourceUrl = typeof result.sourceUrl === "string" ? result.sourceUrl : "";
+    const evidence = typeof result.evidence === "string" ? result.evidence : "";
+    const identityEvidence = `${sourceUrl} ${evidence}`.toUpperCase();
+    if (
+      !price ||
+      result.currency !== "BRL" ||
+      result.matchedProduct !== true ||
+      confidence < 0.9 ||
+      !evidence ||
+      !/^https:\\/\\//i.test(sourceUrl) ||
+      (asin && !identityEvidence.includes(asin))
+    ) return null;
+    return { price, currency: "BRL", sourceUrl, evidence };
+  } catch {
+    return null;
+  }
+}
+
+export async function collectPrice(product: { name: string; url: string | null; source: string | null }): Promise<CollectedPrice> {
   if (!product.url) throw new Error("Produto sem URL de coleta.");
-  const { html, url } = await fetchProductPage(product.url);
-  const defaultCurrency = new URL(url).hostname.toLowerCase().endsWith(".br") ? "BRL" : "";
-  const extracted = extractStructuredPrice(html, defaultCurrency);
-  if (!extracted) throw new Error("A página não expôs um preço estruturado reconhecido.");
-  if (extracted.currency !== "BRL") throw new Error(extracted.currency ? `Moeda não suportada para monitoramento: ${extracted.currency}.` : "A página não informou a moeda do preço.");
-  return { price: extracted.price, currency: "BRL", source: new URL(url).hostname, observedAt: new Date() };
+  let page: { html: string; url: string } | null = null;
+  try {
+    page = await fetchProductPage(product.url);
+  } catch (error) {
+    console.warn("Direct price page fetch failed; trying AI web search", error instanceof Error ? error.message : error);
+  }
+
+  const resolvedUrl = page?.url ?? product.url;
+  const defaultCurrency = new URL(resolvedUrl).hostname.toLowerCase().endsWith(".br") ? "BRL" : "";
+  const extracted = page ? extractStructuredPrice(page.html, defaultCurrency) : null;
+  if (extracted) {
+    if (extracted.currency !== "BRL") throw new Error(extracted.currency ? `Moeda não suportada para monitoramento: ${extracted.currency}.` : "A página não informou a moeda do preço.");
+    return { price: extracted.price, currency: "BRL", source: new URL(resolvedUrl).hostname, observedAt: new Date() };
+  }
+
+  const aiPrice = await findPriceWithAi({ name: product.name, url: product.url });
+  if (!aiPrice) {
+    throw new Error("Não encontrei um preço atual com evidência suficiente para confirmar que é este mesmo produto.");
+  }
+  return { price: aiPrice.price, currency: "BRL", source: new URL(aiPrice.sourceUrl).hostname, observedAt: new Date() };
 }
 
 export async function monitorPrices(userId?: string) {
