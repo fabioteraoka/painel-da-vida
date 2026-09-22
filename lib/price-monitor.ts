@@ -200,8 +200,10 @@ export async function collectPrice(product: { url: string | null; source: string
   return { price: extracted.price, currency: "BRL", source: new URL(url).hostname, observedAt: new Date() };
 }
 
-export async function monitorPrices() {
-  const products = await prisma.monitoredProduct.findMany({ where: { active: true } });
+export async function monitorPrices(userId?: string) {
+  const products = await prisma.monitoredProduct.findMany({
+    where: { active: true, ...(userId ? { userId } : {}) },
+  });
   const results: Array<{ productId: string; status: "updated" | "error"; price?: number; alertCreated?: boolean; error?: string }> = [];
 
   const checkProduct = async (product: any) => {
