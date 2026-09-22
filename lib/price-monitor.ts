@@ -187,6 +187,21 @@ function extractStructuredPrice(html: string, defaultCurrency: string): { price:
     const price = parsePrice(attrs.content ?? attrs.value);
     if (price) return { price, currency: (attrs.currency ?? pageCurrency).toUpperCase() };
   }
+
+  // Amazon often renders the current price in its primary price block without
+  // exposing Product/Offer JSON-LD or price meta tags.
+  const primaryPriceId = /id=["'](?:corePriceDisplay_desktop_feature_div|corePrice_feature_div)["']/i.exec(html);
+  if (primaryPriceId?.index !== undefined) {
+    const primaryPriceBlock = html.slice(primaryPriceId.index, primaryPriceId.index + 20_000);
+    for (const match of primaryPriceBlock.matchAll(/<span\\b[^>]*class=["'][^"']*\\ba-offscreen\\b[^"']*["'][^>]*>([^<]+)<\\/span>/gi)) {
+      const priceTagOffset = match.index ?? 0;
+      const precedingMarkup = primaryPriceBlock.slice(Math.max(0, priceTagOffset - 1_000), priceTagOffset);
+      const enclosingPrice = precedingMarkup.match(/<span\\b[^>]*class=["'][^"']*\\ba-price(?:\\s|["'])[^"']*["'][^>]*>/gi)?.at(-1) ?? "";
+      if (!enclosingPrice || /a-text-price/i.test(enclosingPrice)) continue;
+      const price = parsePrice(match[1]);
+      if (price) return { price, currency: pageCurrency || defaultCurrency };
+    }
+  }
   return null;
 }
 
