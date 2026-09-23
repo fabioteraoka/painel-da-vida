@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
 
     const input = parsed.data;
     const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const email = await tx.email.upsert({
         where: { userId_externalId: { userId: user.id, externalId: input.externalId } },
         create: {
