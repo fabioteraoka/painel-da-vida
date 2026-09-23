@@ -43,17 +43,16 @@ Próximas entregas do objetivo original:
 O projeto usa PostgreSQL com Prisma. Para ativar a persistência real na Vercel:
 
 1. Crie/conecte um PostgreSQL ao projeto na Vercel (Neon é uma opção adequada).
-2. Configure a variável `DATABASE_URL` no ambiente **Production** e também em **Preview**, se quiser testar previews.
+2. Configure `DATABASE_URL` para o runtime e `DATABASE_URL_UNPOOLED` para migrations no ambiente **Production** e também em **Preview**, se quiser testar previews. A integração Neon da Vercel fornece ambas.
 3. Faça um novo deploy após salvar a variável.
-4. No primeiro deploy com o banco disponível, execute `npx prisma db push` em um ambiente que tenha acesso à mesma `DATABASE_URL`, ou use uma etapa de migração no CI/CD.
+4. Os builds da Vercel aplicam as migrations versionadas com `prisma migrate deploy` antes de compilar o app. Configure `DATABASE_URL` para consultas e `DATABASE_URL_UNPOOLED` para migrations; a integração Neon fornece ambas.
 
 A API de tarefas fica em `/api/tasks`; sem banco, ela retorna erro fora do modo demo.
 
-Depois de atualizar o código com alterações no `prisma/schema.prisma`, aplique o schema ao banco do ambiente correspondente antes de usar a versão nova:
+As alterações de banco devem ser registradas em `prisma/migrations`. Na Vercel, o build aplica as migrations antes de publicar a nova versão. Para executar migrations manualmente, use a conexão direta configurada em `DATABASE_URL_UNPOOLED`:
 
 ```bash
-npx prisma db push
-npx prisma generate
+npx prisma migrate deploy
 ```
 
 ### Próxima etapa
@@ -71,4 +70,4 @@ Em produção, use `DEMO_MODE=false` (ou deixe a variável ausente), configure `
 
 Cadastre cada produto com uma URL HTTPS pública que exponha preço em JSON-LD Product/Offer, metadados `product:price:amount` / `og:price:amount`, ou `itemprop=price`. A cada coleta o servidor valida o destino público, baixa a página, normaliza o preço BRL, grava `PriceHistory`, atualiza atual/mínimo/máximo/média e cria um `PriceAlert` quando o preço alcança o alvo. Falhas de coleta aparecem no resultado do cron; nenhum preço simulado é usado em produção.
 
-Configure `CRON_SECRET` na Vercel. O agendamento em `vercel.json` executa a coleta diariamente às 10:00 UTC (07:00 no horário de Brasília), compatível com o plano Hobby. Também é possível clicar em **Consultar preços agora** no painel para iniciar uma coleta manual autenticada dos seus produtos ativos. O primeiro deploy com o novo schema também precisa aplicar `npx prisma db push` ou uma migração Prisma equivalente antes de chamar essas rotas.
+Configure `CRON_SECRET` na Vercel. O agendamento em `vercel.json` executa a coleta diariamente às 10:00 UTC (07:00 no horário de Brasília), compatível com o plano Hobby. Também é possível clicar em **Consultar preços agora** no painel para iniciar uma coleta manual autenticada dos seus produtos ativos. O build da Vercel aplica as migrations antes de publicar o schema necessário para essas rotas.
