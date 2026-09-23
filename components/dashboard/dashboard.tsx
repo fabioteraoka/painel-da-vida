@@ -204,7 +204,14 @@ function detectCalendarConflicts(events: CalendarApiEvent[]): Set<string> {
 const useDemoFixtures = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 export default function Dashboard() {
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      const savedTheme = window.localStorage.getItem("painel-da-vida-theme");
+      if (savedTheme) return savedTheme === "dark";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return false;
+  });
   const [tasks, setTasks] = useState<DashboardTask[]>(
     useDemoFixtures ? initialTasks.map((task) => ({ ...task, id: String(task.id) })) : [],
   );
@@ -270,11 +277,8 @@ export default function Dashboard() {
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("painel-da-vida-theme");
-    const prefersDark = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setDarkMode(prefersDark);
-    document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
-  }, []);
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+  }, [darkMode]);
 
   function toggleTheme() {
     const nextTheme = darkMode ? "light" : "dark";

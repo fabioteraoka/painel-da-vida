@@ -121,7 +121,13 @@ export const DEFAULT_USER = {
 
 export async function auth() {
   if (!isAuthConfigured) {
-    throw new Error("Configure AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET e AUTH_SECRET na Vercel para usar autenticação em produção.");
+    if (isDemoMode) {
+      return {
+        user: DEFAULT_USER,
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+    }
+    return null;
   }
 
   try {

@@ -2,7 +2,12 @@ import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const isDemoMode = process.env.DEMO_MODE === "true";
+export const isDemoMode =
+  process.env.DEMO_MODE === "true" ||
+  process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
+  process.env.DEMO_MODE !== "false" ||
+  !process.env.DATABASE_URL ||
+  process.env.DATABASE_URL.trim() === "";
 
 function createMockPrisma(): PrismaClient {
   console.info("[Painel da Vida] Operando com armazenamento local otimizado (Zero-Config)");
