@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { generateText, gateway, stepCountIs } from "ai";
-import { aiModel, isAiGatewayAvailable } from "@/lib/ai-gateway";
+import { aiModel } from "@/lib/ai-gateway";
 import { prisma } from "@/lib/prisma";
 
 type CollectedPrice = { price: number; currency: string; source: string; observedAt: Date };
@@ -210,20 +210,18 @@ function extractStructuredPrice(html: string, defaultCurrency: string): { price:
 type AiPriceResult = { price: number; currency: "BRL"; sourceUrl: string; evidence: string };
 
 async function findPriceWithAi(product: { name: string; url: string }): Promise<AiPriceResult | null> {
-  if (!isAiGatewayAvailable()) {
-    throw new Error("A leitura automática não encontrou o preço na página. Para usar a busca com IA, configure AI_GATEWAY_API_KEY na Vercel.");
-  }
-
   const asin = product.url.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase();
   const today = new Date().toISOString().slice(0, 10);
-  const { text } = await generateText({
-    model: aiModel,
-    tools: {
-      parallel_search: gateway.tools.parallelSearch({ mode: "one-shot", maxResults: 5 }),
-    },
-    stopWhen: stepCountIs(3),
-    maxOutputTokens: 400,
-    prompt: `Você está consultando um preço atual para um monitor de preços. Hoje é ${today}.
+  let text: string;
+  try {
+    ({ text } = await generateText({
+      model: aiModel,
+      tools: {
+        parallel_search: gateway.tools.parallelSearch({ mode: "one-shot", maxResults: 5 }),
+      },
+      stopWhen: stepCountIs(3),
+      maxOutputTokens: 400,
+      prompt: `Você está consultando um preço atual para um monitor de preços. Hoje é ${today}.
 Produto informado: ${product.name}
 URL cadastrada: ${product.url}
 Identificador ASIN, quando presente: ${asin ?? "não identificado"}
@@ -233,7 +231,14 @@ Aceite somente se um resultado da busca mostrar claramente o preço atual e conf
 Se não encontrar evidência confiável, retorne null.
 Responda somente JSON neste formato:
 {"price": número ou null, "currency":"BRL", "matchedProduct":true ou false, "sourceUrl":"URL HTTPS da página que mostra o preço ou string vazia", "evidence":"trecho curto que mostra o preço e o identificador do produto", "confidence": número de 0 a 1}`,
-  });
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    if (/unauthoriz|credential|api key|authentication|token/.test(message)) {
+      throw new Error("A busca com IA não conseguiu autenticar no servidor. Verifique se o AI Gateway está habilitado no projeto Vercel.");
+    }
+    throw error;
+  }
 
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) return null;

@@ -1,10 +1,109 @@
 @import "tailwindcss";
-:root{--background:#f5f7fb;--foreground:#0f172a}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;background:var(--background);color:var(--foreground);font-family:Arial,Helvetica,sans-serif}
-button{cursor:pointer}
-::selection{background:#c7d2fe;color:#312e81}
-::-webkit-scrollbar{width:8px;height:8px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+:root {
+  color-scheme: light;
+  --background: #f5f8f6;
+  --foreground: #202024;
+  --surface-1: #ffffff;
+  --surface-2: #f4f6f5;
+  --border: #e1e1e6;
+  --muted: #505059;
+  --brand: #00875f;
+  --brand-strong: #015f43;
+  --brand-soft: #e8f6f0;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #121a17;
+  --foreground: #e8f0ec;
+  --surface-1: #1b2521;
+  --surface-2: #222e29;
+  --border: #35443d;
+  --muted: #a9b8b0;
+  --brand: #00b37e;
+  --brand-strong: #00c98e;
+  --brand-soft: #17382d;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+button { cursor: pointer; }
+::selection { background: #b7ead5; color: #00291d; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #a9a9b2; border-radius: 999px; }
+
+/* The app's Tailwind UI now follows the colors from the Ignite design tokens. */
+[class~="bg-indigo-600"] { background-color: var(--brand) !important; }
+[class~="hover:bg-indigo-700"]:hover { background-color: var(--brand-strong) !important; }
+[class~="text-indigo-600"] { color: var(--brand) !important; }
+[class~="text-indigo-700"] { color: var(--brand-strong) !important; }
+[class~="border-indigo-100"], [class~="border-indigo-200"] { border-color: #b7dfce !important; }
+[class~="bg-indigo-50"], [class~="bg-indigo-50/40"] { background-color: var(--brand-soft) !important; }
+
+:root[data-theme="dark"] body { background: var(--background); color: var(--foreground); }
+:root[data-theme="dark"] [class~="bg-white"],
+:root[data-theme="dark"] [class~="bg-white/95"] { background-color: var(--surface-1) !important; }
+:root[data-theme="dark"] [class~="bg-slate-50"],
+:root[data-theme="dark"] [class~="bg-slate-50/50"],
+:root[data-theme="dark"] [class~="bg-slate-100"],
+:root[data-theme="dark"] [class~="hover:bg-slate-50"]:hover,
+:root[data-theme="dark"] [class~="hover:bg-slate-100"]:hover { background-color: var(--surface-2) !important; }
+:root[data-theme="dark"] [class~="bg-indigo-50"],
+:root[data-theme="dark"] [class~="bg-indigo-100"],
+:root[data-theme="dark"] [class~="bg-indigo-50/40"],
+:root[data-theme="dark"] [class~="bg-emerald-50"],
+:root[data-theme="dark"] [class~="bg-emerald-50/40"],
+:root[data-theme="dark"] [class~="bg-emerald-100"] { background-color: var(--brand-soft) !important; }
+:root[data-theme="dark"] [class~="bg-amber-50"],
+:root[data-theme="dark"] [class~="bg-amber-100"] { background-color: #3a3120 !important; }
+:root[data-theme="dark"] [class~="bg-blue-50"] { background-color: #1c2f3c !important; }
+:root[data-theme="dark"] [class~="bg-red-50"],
+:root[data-theme="dark"] [class~="bg-red-100"] { background-color: #3c2426 !important; }
+:root[data-theme="dark"] [class~="text-slate-900"],
+:root[data-theme="dark"] [class~="text-slate-800"],
+:root[data-theme="dark"] [class~="text-slate-700"],
+:root[data-theme="dark"] [class~="text-slate-600"],
+:root[data-theme="dark"] [class~="text-slate-500"] { color: var(--foreground) !important; }
+:root[data-theme="dark"] [class~="text-slate-400"] { color: #a9b8b0 !important; }
+:root[data-theme="dark"] [class~="text-indigo-600"],
+:root[data-theme="dark"] [class~="text-indigo-700"],
+:root[data-theme="dark"] [class~="text-emerald-700"],
+:root[data-theme="dark"] [class~="text-emerald-800"] { color: #67d9ae !important; }
+:root[data-theme="dark"] [class~="text-amber-600"],
+:root[data-theme="dark"] [class~="text-amber-700"],
+:root[data-theme="dark"] [class~="text-amber-800"] { color: #f3ca78 !important; }
+:root[data-theme="dark"] [class~="text-blue-600"],
+:root[data-theme="dark"] [class~="text-blue-700"] { color: #8bc7ef !important; }
+:root[data-theme="dark"] [class~="text-red-600"],
+:root[data-theme="dark"] [class~="text-red-700"] { color: #ffaaa8 !important; }
+:root[data-theme="dark"] [class~="border-slate-100"],
+:root[data-theme="dark"] [class~="border-slate-200"],
+:root[data-theme="dark"] [class~="border-slate-300"],
+:root[data-theme="dark"] [class~="border-emerald-200"],
+:root[data-theme="dark"] [class~="border-emerald-300"],
+:root[data-theme="dark"] [class~="border-indigo-100"],
+:root[data-theme="dark"] [class~="border-indigo-200"] { border-color: var(--border) !important; }
+:root[data-theme="dark"] [class~="border-dashed"] { border-color: #52645a !important; }
+:root[data-theme="dark"] [class~="from-indigo-50/70"] {
+  background-image: linear-gradient(to bottom right, #17382d, var(--surface-1), var(--surface-1)) !important;
+}
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea { background-color: var(--surface-1); color: var(--foreground); border-color: var(--border); }
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder { color: #a9b8b0; }
+:root[data-theme="dark"] [class~="bg-rose-50"] { background-color: #3c2426 !important; }
+:root[data-theme="dark"] [class~="text-rose-700"] { color: #ffaaa8 !important; }
+:root[data-theme="dark"] [class~="border-rose-200"] { border-color: #754346 !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}

@@ -25,6 +25,8 @@ import {
   Search,
   Settings,
   RefreshCw,
+  Moon,
+  Sun,
   ShoppingCart,
   Sparkles,
   Tag as TagIcon,
@@ -169,6 +171,17 @@ function formatDueDate(value: string | null) {
   });
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
+
+function formatPriceCheckError(message: string) {
+  if (message.includes("AI_GATEWAY_API_KEY") || message.includes("AI Gateway")) {
+    return "A loja não mostrou o preço e a busca inteligente ainda não está conectada ao servidor.";
+  }
+  return message;
+}
+
 function detectCalendarConflicts(events: CalendarApiEvent[]): Set<string> {
   const conflictIds = new Set<string>();
   for (let i = 0; i < events.length; i++) {
@@ -191,6 +204,7 @@ function detectCalendarConflicts(events: CalendarApiEvent[]): Set<string> {
 const useDemoFixtures = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 export default function Dashboard() {
+  const [darkMode, setDarkMode] = useState(false);
   const [tasks, setTasks] = useState<DashboardTask[]>(
     useDemoFixtures ? initialTasks.map((task) => ({ ...task, id: String(task.id) })) : [],
   );
@@ -254,6 +268,20 @@ export default function Dashboard() {
 
   const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("painel-da-vida-theme");
+    const prefersDark = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setDarkMode(prefersDark);
+    document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
+  }, []);
+
+  function toggleTheme() {
+    const nextTheme = darkMode ? "light" : "dark";
+    setDarkMode(nextTheme === "dark");
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("painel-da-vida-theme", nextTheme);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -716,6 +744,15 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                aria-label={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+                title={darkMode ? "Modo claro" : "Modo escuro"}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+              >
+                {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+              </button>
               <span className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:inline-flex">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 Google Conectado
@@ -1261,22 +1298,23 @@ export default function Dashboard() {
                                       </span>
                                     </div>
                                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                                      <span>Limite: <strong className="text-slate-800">R$ {p.targetPrice.toFixed(2)}</strong></span>
+                                      <span>Limite: <strong className="text-slate-800">{formatCurrency(p.targetPrice)}</strong></span>
                                       {p.currentPrice !== null && p.currentPrice !== undefined && (
-                                        <span>Atual: <strong className={isDeal ? "text-emerald-700 font-bold" : "text-slate-700"}>R$ {p.currentPrice.toFixed(2)}</strong></span>
+                                        <span>Atual: <strong className={isDeal ? "text-emerald-700 font-bold" : "text-slate-700"}>{formatCurrency(p.currentPrice)}</strong></span>
                                       )}
                                       {p.lowestPrice !== null && p.lowestPrice !== undefined && (
-                                        <span className="text-[11px] text-slate-400">Menor: R$ {p.lowestPrice.toFixed(2)}</span>
+                                        <span className="text-[11px] text-slate-400">Menor: {formatCurrency(p.lowestPrice)}</span>
                                       )}
                                       {p.alerts?.map((alert) => (
                                         <span key={alert.id} className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                                          Alerta: atingiu R$ {alert.targetPrice.toFixed(2)}
+                                          Alerta: atingiu {formatCurrency(alert.targetPrice)}
                                           <button type="button" onClick={() => void markPriceAlertRead(p.id, alert.id)} className="underline">Dispensar</button>
                                         </span>
                                       ))}
                                       {p.lastCheckError && (
-                                        <span className="text-[10px] font-medium text-rose-700">
-                                          Última tentativa falhou{p.lastAttemptedAt ? ` em ${new Date(p.lastAttemptedAt).toLocaleString("pt-BR")}` : ""}: {p.lastCheckError}
+                                        <span className="basis-full rounded-lg bg-rose-50 px-3 py-2 text-[11px] font-medium leading-relaxed text-rose-700" role="status">
+                                          <strong>Consulta não concluída{p.lastAttemptedAt ? ` · ${new Date(p.lastAttemptedAt).toLocaleString("pt-BR")}` : ""}:</strong>{" "}
+                                          {formatPriceCheckError(p.lastCheckError)}
                                         </span>
                                       )}
                                       {p.lastChecked && (
@@ -1286,7 +1324,7 @@ export default function Dashboard() {
                                   </div>
 
                                   <div className="flex items-center gap-2">
-                                    {isDeal ? (
+                                    {isDeal && !p.lastCheckError ? (
                                       <div className="flex items-center gap-2">
                                         <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-800 flex items-center gap-1">
                                           🎯 Abaixo do limite!
@@ -1303,7 +1341,9 @@ export default function Dashboard() {
                                         )}
                                       </div>
                                     ) : (
-                                      <span className="text-[11px] text-slate-400">Aguardando preço</span>
+                                      <span className={`text-[11px] font-medium ${p.lastCheckError ? "text-rose-700" : "text-slate-400"}`}>
+                                        {p.lastCheckError ? "Falha na consulta" : "Aguardando preço"}
+                                      </span>
                                     )}
                                     <button
                                       type="button"
