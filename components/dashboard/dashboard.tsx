@@ -24,21 +24,28 @@ import {
   Plus,
   Search,
   Settings,
+  RefreshCw,
   ShoppingCart,
   Sparkles,
   Tag as TagIcon,
   Target,
   TrendingDown,
+  Trash2,
   X,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
-import { alerts, calendarEvents as mockCalendarEvents, emails as mockEmails, initialTasks, type Task } from "@/lib/mock-data";
+import { initialTasks, type Task } from "@/lib/mock-data";
 
 type GmailApiMessage = {
   id: string;
+  taskId?: string | null;
   threadId?: string;
+  sender?: string;
+  senderName?: string;
+  subject?: string;
   labelIds?: string[];
   snippet?: string;
+  internalDate?: string;
   dashboardCategory?: "RESPOND_TODAY" | "FOLLOW_UP" | "INFORMATIVE" | "NOISE";
   dashboardReason?: string;
   payload?: {
@@ -94,7 +101,11 @@ type MonitoredProductApi = {
   source: string | null;
   active: boolean;
   lastChecked: string | null;
+  lastAttemptedAt?: string | null;
+  lastCheckError?: string | null;
   isOpportunity: boolean;
+  alerts?: { id: string; price: number; targetPrice: number; createdAt: string }[];
+  priceHistory?: { price: number; currency: string; source: string | null; observedAt: string }[];
 };
 
 type ApiTask = {
@@ -177,9 +188,11 @@ function detectCalendarConflicts(events: CalendarApiEvent[]): Set<string> {
   return conflictIds;
 }
 
+const useDemoFixtures = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
 export default function Dashboard() {
   const [tasks, setTasks] = useState<DashboardTask[]>(
-    initialTasks.map((task) => ({ ...task, id: String(task.id) })),
+    useDemoFixtures ? initialTasks.map((task) => ({ ...task, id: String(task.id) })) : [],
   );
   const [today] = useState<Date>(() => new Date());
   const [mobile, setMobile] = useState(false);
@@ -191,6 +204,8 @@ export default function Dashboard() {
   const [gmailMessages, setGmailMessages] = useState<GmailApiMessage[]>([]);
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailError, setGmailError] = useState(false);
+  const [creatingEmailTaskId, setCreatingEmailTaskId] = useState<string | null>(null);
+  const [emailTaskError, setEmailTaskError] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [bills, setBills] = useState<BillApi[]>([]);
@@ -203,10 +218,12 @@ export default function Dashboard() {
   // Price monitoring state
   const [products, setProducts] = useState<MonitoredProductApi[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
+  const [priceChecking, setPriceChecking] = useState(false);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [priceCheckMessage, setPriceCheckMessage] = useState<string | null>(null);
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [newProductTitle, setNewProductTitle] = useState("");
   const [newProductTarget, setNewProductTarget] = useState("");
-  const [newProductCurrent, setNewProductCurrent] = useState("");
   const [newProductSource, setNewProductSource] = useState("Amazon");
   const [newProductUrl, setNewProductUrl] = useState("");
 
@@ -443,6 +460,105 @@ export default function Dashboard() {
     }
   }
 
+  async function handleCreateTaskFromEmail(message: GmailApiMessage) {
+    const headers = message.payload?.headers ?? [];
+    const header = (name: string) => headers.find((item) => item.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+    const subject = header("subject") || message.subject || "Ação de e-mail";
+    const sender = header("from") || message.sender || message.senderName || "Remetente desconhecido";
+    const dateHeader = header("date");
+    const receivedDate = message.internalDate
+      ? new Date(Number(message.internalDate))
+      : dateHeader ? new Date(dateHeader) : new Date();
+    const receivedAt = Number.isNaN(receivedDate.getTime()) ? new Date().toISOString() : receivedDate.toISOString();
+
+    setCreatingEmailTaskId(message.id);
+    setEmailTaskError(null);
+    try {
+      const response = await fetch("/api/gmail/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          externalId: message.id,
+          threadId: message.threadId,
+          sender,
+          subject,
+          snippet: message.snippet ?? "",
+          category: message.dashboardCategory,
+          receivedAt,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Não foi possível criar a tarefa.");
+
+      const task = result.task as ApiTask;
+      setTasks((current) => current.some((item) => item.id === task.id)
+        ? current
+        : [mapApiTask(task), ...current]);
+      setGmailMessages((current) => current.map((item) => item.id === message.id
+        ? { ...item, taskId: task.id }
+        : item));
+    } catch (error) {
+      setEmailTaskError(error instanceof Error ? error.message : "Não foi possível criar a tarefa.");
+    } finally {
+      setCreatingEmailTaskId(null);
+    }
+  }
+
+  async function handleCheckPrices() {
+    setPriceChecking(true);
+    setPriceCheckMessage(null);
+    try {
+      const response = await fetch("/api/products/check", { method: "POST", cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok && response.status !== 207) {
+        throw new Error(result.error ?? "Não foi possível consultar os preços.");
+      }
+      const refreshed = await fetch("/api/products", { cache: "no-store" });
+      if (!refreshed.ok) throw new Error("Consulta concluída, mas não foi possível atualizar o painel.");
+      setProducts((await refreshed.json()) as MonitoredProductApi[]);
+      setPriceCheckMessage(result.failed
+        ? `Consulta concluída: ${result.updated} atualizados, ${result.failed} com falha.`
+        : `Consulta concluída: ${result.updated} produto(s) atualizado(s).`);
+    } catch (error) {
+      setPriceCheckMessage(error instanceof Error ? error.message : "Falha ao consultar preços.");
+    } finally {
+      setPriceChecking(false);
+    }
+  }
+
+  async function markPriceAlertRead(productId: string, alertId: string) {
+    try {
+      const response = await fetch(`/api/price-alerts/${alertId}`, { method: "PATCH" });
+      if (!response.ok) return;
+      setProducts((current) => current.map((product) =>
+        product.id === productId
+          ? { ...product, alerts: product.alerts?.filter((alert) => alert.id !== alertId) }
+          : product,
+      ));
+    } catch (error) {
+      console.error("Não foi possível dispensar o alerta de preço:", error);
+    }
+  }
+
+  async function handleDeleteProduct(product: MonitoredProductApi) {
+    if (!window.confirm('Apagar "' + product.title + '" do monitoramento?')) return;
+
+    setDeletingProductId(product.id);
+    setPriceCheckMessage(null);
+    try {
+      const response = await fetch("/api/products/" + product.id, { method: "DELETE" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Não foi possível apagar o produto.");
+
+      setProducts((current) => current.filter((item) => item.id !== product.id));
+      setPriceCheckMessage('"' + product.title + '" foi removido do monitoramento.');
+    } catch (error) {
+      setPriceCheckMessage(error instanceof Error ? error.message : "Não foi possível apagar o produto.");
+    } finally {
+      setDeletingProductId(null);
+    }
+  }
+
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!newProductTitle.trim() || !newProductTarget) return;
@@ -454,7 +570,6 @@ export default function Dashboard() {
         body: JSON.stringify({
           title: newProductTitle.trim(),
           targetPrice: parseFloat(newProductTarget),
-          currentPrice: newProductCurrent ? parseFloat(newProductCurrent) : parseFloat(newProductTarget),
           source: newProductSource,
           url: newProductUrl.trim() || null,
         }),
@@ -465,7 +580,6 @@ export default function Dashboard() {
         setProducts((prev) => [created, ...prev]);
         setNewProductTitle("");
         setNewProductTarget("");
-        setNewProductCurrent("");
         setNewProductUrl("");
         setNewProductOpen(false);
       }
@@ -1048,6 +1162,19 @@ export default function Dashboard() {
                     onActionClick={() => setNewProductOpen((v) => !v)}
                   >
                     <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11px] text-slate-500">Verificação automática diária; consulte manualmente quando quiser.</p>
+                        <button
+                          type="button"
+                          onClick={() => void handleCheckPrices()}
+                          disabled={priceChecking || productsLoading || products.length === 0}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <RefreshCw size={13} className={priceChecking ? "animate-spin" : ""} />
+                          {priceChecking ? "Consultando..." : "Consultar preços agora"}
+                        </button>
+                      </div>
+                      {priceCheckMessage && <p role="status" className="text-xs text-slate-600">{priceCheckMessage}</p>}
                       {newProductOpen && (
                         <form onSubmit={handleAddProduct} className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
                           <h4 className="text-xs font-bold text-slate-800">Novo Produto para Monitorar</h4>
@@ -1068,14 +1195,6 @@ export default function Dashboard() {
                               onChange={(e) => setNewProductTarget(e.target.value)}
                               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
                             />
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="Preço atual (ex.: 269.00)"
-                              value={newProductCurrent}
-                              onChange={(e) => setNewProductCurrent(e.target.value)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
-                            />
                             <select
                               value={newProductSource}
                               onChange={(e) => setNewProductSource(e.target.value)}
@@ -1089,7 +1208,9 @@ export default function Dashboard() {
                             </select>
                           </div>
                           <input
-                            placeholder="Link do produto (opcional)"
+                            required
+                            type="url"
+                            placeholder="Link HTTPS do produto (obrigatório)"
                             value={newProductUrl}
                             onChange={(e) => setNewProductUrl(e.target.value)}
                             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
@@ -1141,11 +1262,25 @@ export default function Dashboard() {
                                     </div>
                                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                                       <span>Limite: <strong className="text-slate-800">R$ {p.targetPrice.toFixed(2)}</strong></span>
-                                      {p.currentPrice && (
+                                      {p.currentPrice !== null && p.currentPrice !== undefined && (
                                         <span>Atual: <strong className={isDeal ? "text-emerald-700 font-bold" : "text-slate-700"}>R$ {p.currentPrice.toFixed(2)}</strong></span>
                                       )}
-                                      {p.lowestPrice && (
+                                      {p.lowestPrice !== null && p.lowestPrice !== undefined && (
                                         <span className="text-[11px] text-slate-400">Menor: R$ {p.lowestPrice.toFixed(2)}</span>
+                                      )}
+                                      {p.alerts?.map((alert) => (
+                                        <span key={alert.id} className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                          Alerta: atingiu R$ {alert.targetPrice.toFixed(2)}
+                                          <button type="button" onClick={() => void markPriceAlertRead(p.id, alert.id)} className="underline">Dispensar</button>
+                                        </span>
+                                      ))}
+                                      {p.lastCheckError && (
+                                        <span className="text-[10px] font-medium text-rose-700">
+                                          Última tentativa falhou{p.lastAttemptedAt ? ` em ${new Date(p.lastAttemptedAt).toLocaleString("pt-BR")}` : ""}: {p.lastCheckError}
+                                        </span>
+                                      )}
+                                      {p.lastChecked && (
+                                        <span className="text-[10px] text-slate-400">Último preço válido: {new Date(p.lastChecked).toLocaleString("pt-BR")}</span>
                                       )}
                                     </div>
                                   </div>
@@ -1170,6 +1305,16 @@ export default function Dashboard() {
                                     ) : (
                                       <span className="text-[11px] text-slate-400">Aguardando preço</span>
                                     )}
+                                    <button
+                                      type="button"
+                                      aria-label={"Excluir " + p.title}
+                                      onClick={() => void handleDeleteProduct(p)}
+                                      disabled={deletingProductId === p.id}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      <Trash2 size={13} />
+                                      {deletingProductId === p.id ? "Excluindo..." : "Excluir"}
+                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -1371,11 +1516,30 @@ export default function Dashboard() {
                                   Motivo: {message.dashboardReason}
                                 </p>
                               )}
+                              {(category === "RESPOND_TODAY" || category === "FOLLOW_UP") && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  {message.taskId ? (
+                                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                                      <Check size={12} /> Tarefa criada e salva
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={creatingEmailTaskId === message.id}
+                                      onClick={() => void handleCreateTaskFromEmail(message)}
+                                      className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                                    >
+                                      {creatingEmailTaskId === message.id ? "Salvando…" : "Criar tarefa"}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })
                       )}
                     </div>
+                    {emailTaskError && <p role="alert" className="mt-2 text-xs text-red-600">{emailTaskError}</p>}
                   </Card>
                 </div>
 
@@ -1551,7 +1715,7 @@ function SidebarContent() {
         </p>
         <Connection label="Google Calendar" status="Sincronizado" color="bg-emerald-500" />
         <Connection label="Gmail API" status="Classificação Ativa" color="bg-emerald-500" />
-        <Connection label="Monitor de Preços" status="Checagem 30m" color="bg-indigo-500" />
+        <Connection label="Monitor de Preços" status="Diário + consulta manual" color="bg-indigo-500" />
       </div>
 
       <div className="mt-auto pt-6">

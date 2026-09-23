@@ -1,6 +1,6 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isDemoMode } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,6 +61,7 @@ export async function GET() {
     });
 
     if (!integration?.accessToken) {
+      if (!isDemoMode) return NextResponse.json({ error: "Conecte o Google Calendar para consultar eventos." }, { status: 409 });
       const today = new Date();
       const createTime = (hours: number, minutes: number) => {
         const d = new Date(today);

@@ -32,9 +32,11 @@ model Task {
   dueAt       DateTime?
   completedAt DateTime?
   billId      String?       @unique
+  emailId     String?      @unique
   userId      String
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   bill        Bill?      @relation(fields: [billId], references: [id], onDelete: SetNull)
+  email       Email?     @relation(fields: [emailId], references: [id], onDelete: SetNull)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -75,12 +77,14 @@ model Email {
   source      String        @default("local")
   userId      String
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task        Task?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   @@index([userId])
   @@index([receivedAt])
   @@index([needsAction])
+  @@unique([userId, externalId])
 }
 
 model Person {
@@ -217,6 +221,7 @@ enum EmailCategory {
   RESPOND_TODAY
   FOLLOW_UP
   INFORMATIVE
+  NOISE
 }
 
 enum IntegrationProvider {
@@ -243,9 +248,12 @@ model MonitoredProduct {
   notifyTarget Boolean        @default(true)
   active       Boolean        @default(true)
   lastChecked  DateTime?
+  lastAttemptedAt DateTime?
+  lastCheckError String?
   userId       String
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   history      PriceHistory[]
+  alerts       PriceAlert[]
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 }
@@ -253,7 +261,24 @@ model MonitoredProduct {
 model PriceHistory {
   id                 String           @id @default(uuid())
   price              Float
+  currency           String           @default("BRL")
+  source             String?
   monitoredProductId String
   monitoredProduct   MonitoredProduct @relation(fields: [monitoredProductId], references: [id], onDelete: Cascade)
   observedAt         DateTime         @default(now())
+}
+
+
+model PriceAlert {
+  id                 String           @id @default(uuid())
+  monitoredProductId String
+  monitoredProduct   MonitoredProduct @relation(fields: [monitoredProductId], references: [id], onDelete: Cascade)
+  price              Float
+  targetPrice        Float
+  isRead             Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  readAt             DateTime?
+
+  @@index([monitoredProductId, isRead])
+  @@index([createdAt])
 }
