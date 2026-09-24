@@ -20,7 +20,7 @@ export default function LoginPage() {
 
         <div className="mt-8 space-y-3">
           <Link
-            href="/"
+            href="/?demo=true"
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-xs transition hover:bg-indigo-700"
           >
             Entrar como Fábio Teraoka (Acesso Rápido)

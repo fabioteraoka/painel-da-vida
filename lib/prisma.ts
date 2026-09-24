@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; mockStore?: Map<string, Map<string, any>> };
+
+export const isDemoMode = process.env.DEMO_MODE === "true";
 
 export const isDemoMode =
   process.env.DEMO_MODE === "true" ||
@@ -11,7 +13,7 @@ export const isDemoMode =
 
 function createMockPrisma(): PrismaClient {
   console.info("[Painel da Vida] Operando com armazenamento local otimizado (Zero-Config)");
-  const inMemoryStore = new Map<string, Map<string, any>>();
+  const inMemoryStore = (globalForPrisma.mockStore ??= new Map<string, Map<string, any>>());
 
   const getStore = (model: string) => {
     const key = model.toLowerCase();
@@ -45,10 +47,26 @@ function createMockPrisma(): PrismaClient {
       }
     }
 
+    if (m === "monitoredproduct") {
+      if (include.history) {
+        copy.history = Array.from(getStore("pricehistory").values()).filter(
+          (h: any) => h.monitoredProductId === item.id,
+        );
+      }
+      if (include.alerts) {
+        copy.alerts = Array.from(getStore("pricealert").values()).filter(
+          (a: any) => a.monitoredProductId === item.id,
+        );
+      }
+    }
+
     return copy;
   };
 
   const seedStore = () => {
+    if (inMemoryStore.size > 0) {
+      return; // Persistência do mock sem reseeding após alterações
+    }
     const userStore = getStore("user");
     const personStore = getStore("person");
     const accountStore = getStore("paymentaccount");
