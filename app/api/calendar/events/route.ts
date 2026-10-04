@@ -1,44 +1,16 @@
 import { auth } from "@/auth";
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { prisma, isDemoMode } from "@/lib/prisma";
+import {
+  listUserConnectedAccounts,
+  getValidAccessToken,
+  toSafeAccount,
+} from "@/lib/connected-accounts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function refreshGoogleToken(userId: string, refreshToken: string) {
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: process.env.AUTH_GOOGLE_ID ?? "",
-      client_secret: process.env.AUTH_GOOGLE_SECRET ?? "",
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Não foi possível renovar o token do Google.");
-  }
-
-  const data = (await response.json()) as {
-    access_token: string;
-    expires_in?: number;
-  };
-
-  await prisma.integration.update({
-    where: { userId_provider: { userId, provider: "GOOGLE_CALENDAR" } },
-    data: {
-      accessToken: data.access_token,
-      expiresAt: new Date(Date.now() + (data.expires_in ?? 3600) * 1000),
-      status: "CONNECTED",
-    },
-  });
-
-  return data.access_token;
-}
-
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await auth();
     const email = session?.user?.email;
@@ -51,17 +23,39 @@ export async function GET() {
       where: { email },
       select: { id: true },
     });
+    const userId = user?.id ?? (isDemoMode ? "user-fabio-teraoka" : null);
 
-    if (!user) {
+    if (!userId) {
       return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
     }
 
-    const integration = await prisma.integration.findUnique({
-      where: { userId_provider: { userId: user.id, provider: "GOOGLE_CALENDAR" } },
-    });
+    const allAccounts = await listUserConnectedAccounts(userId);
+    const activeAccounts = allAccounts.filter(
+      (a) => a.status === "CONNECTED" && a.provider === "GOOGLE",
+    );
 
-    if (!integration?.accessToken) {
-      if (!isDemoMode) return NextResponse.json({ error: "Conecte o Google Calendar para consultar eventos." }, { status: 409 });
+    const searchParams = req.nextUrl?.searchParams;
+    const requestedAccountId = searchParams?.get("accountId");
+
+    const targetAccounts =
+      requestedAccountId && requestedAccountId !== "all"
+        ? activeAccounts.filter((a) => a.id === requestedAccountId)
+        : activeAccounts;
+
+    if (targetAccounts.length === 0) {
+      if (!isDemoMode) {
+        return NextResponse.json(
+          {
+            connected: false,
+            accounts: allAccounts.map(toSafeAccount),
+            items: [],
+            error: "Nenhuma conta Google conectada para consultar a agenda.",
+          },
+          { status: 409 },
+        );
+      }
+
+      // Simulated Demo Fixtures with personal and work accounts consolidated
       const today = new Date();
       const createTime = (hours: number, minutes: number) => {
         const d = new Date(today);
@@ -69,71 +63,114 @@ export async function GET() {
         return d.toISOString();
       };
 
+      const mockPersonalAccount = allAccounts.find((a) => a.accountType === "PERSONAL") ?? {
+        id: "acc-google-personal",
+        email: "fteraoka@gmail.com",
+        label: "Google — pessoal",
+        accountType: "PERSONAL",
+      };
+      const mockWorkAccount = allAccounts.find((a) => a.accountType === "WORK") ?? {
+        id: "acc-google-work",
+        email: "fabio@empresa.com.br",
+        label: "Google — profissional",
+        accountType: "WORK",
+      };
+
+      const mockCalendarEvents = [
+        {
+          id: "cal-1",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
+          summary: "Projeto MOMQ — Alinhamento",
+          description: "Reunião de acompanhamento das entregas com o time de engenharia.",
+          start: { dateTime: createTime(8, 30) },
+          end: { dateTime: createTime(9, 30) },
+          location: "Microsoft Teams",
+          htmlLink: "https://calendar.google.com",
+        },
+        {
+          id: "cal-2",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
+          summary: "Suprimentos e Fornecedores",
+          description: "Alinhamento sobre prazos de entrega e reposição de estoque.",
+          start: { dateTime: createTime(11, 0) },
+          end: { dateTime: createTime(12, 0) },
+          location: "Google Meet",
+          htmlLink: "https://meet.google.com",
+        },
+        {
+          id: "cal-3",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
+          summary: "Sync Estratégico com Diretoria",
+          description: "Apresentação de resultados e metas operacionais do trimestre.",
+          start: { dateTime: createTime(14, 0) },
+          end: { dateTime: createTime(15, 0) },
+          location: "Sala de Reuniões 3",
+          htmlLink: "https://calendar.google.com",
+        },
+        {
+          id: "cal-4",
+          connectedAccountId: mockPersonalAccount.id,
+          accountEmail: mockPersonalAccount.email,
+          accountLabel: mockPersonalAccount.label,
+          accountType: "PERSONAL",
+          summary: "Consulta Médica / Dentista (Pessoal)",
+          description: "Consulta de rotina com retorno agendado.",
+          start: { dateTime: createTime(14, 30) },
+          end: { dateTime: createTime(15, 30) },
+          location: "Consultório Dr. Marcelo",
+          htmlLink: "https://calendar.google.com",
+        },
+        {
+          id: "cal-5",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
+          summary: "Alinhamento Operacional Fábrica",
+          description: "⚠️ Reunião urgente convocada pela gerência da fábrica.",
+          start: { dateTime: createTime(14, 30) },
+          end: { dateTime: createTime(15, 30) },
+          location: "Google Meet",
+          htmlLink: "https://meet.google.com",
+        },
+        {
+          id: "cal-6",
+          connectedAccountId: mockPersonalAccount.id,
+          accountEmail: mockPersonalAccount.email,
+          accountLabel: mockPersonalAccount.label,
+          accountType: "PERSONAL",
+          summary: "Revisão de Boletos e Contas do Mês",
+          description: "Conferir vencimentos de contas de consumo e condomínio.",
+          start: { dateTime: createTime(16, 30) },
+          end: { dateTime: createTime(17, 0) },
+          location: "Home Office",
+          htmlLink: "https://calendar.google.com",
+        },
+      ];
+
+      let filteredEvents = mockCalendarEvents;
+      if (requestedAccountId && requestedAccountId !== "all") {
+        filteredEvents = filteredEvents.filter((e) => e.connectedAccountId === requestedAccountId);
+      }
+
       return NextResponse.json({
-        connected: false,
+        connected: true,
         isSimulated: true,
-        items: [
-          {
-            id: "cal-1",
-            summary: "Projeto MOMQ — Alinhamento",
-            description: "Reunião de acompanhamento das entregas com o time de engenharia.",
-            start: { dateTime: createTime(8, 30) },
-            end: { dateTime: createTime(9, 30) },
-            location: "Microsoft Teams",
-            htmlLink: "https://calendar.google.com",
-          },
-          {
-            id: "cal-2",
-            summary: "Suprimentos e Fornecedores",
-            description: "Alinhamento sobre prazos de entrega e reposição de estoque.",
-            start: { dateTime: createTime(11, 0) },
-            end: { dateTime: createTime(12, 0) },
-            location: "Google Meet",
-            htmlLink: "https://meet.google.com",
-          },
-          {
-            id: "cal-3",
-            summary: "Sync Estratégico com Diretoria",
-            description: "Apresentação de resultados e metas operacionais do trimestre.",
-            start: { dateTime: createTime(14, 0) },
-            end: { dateTime: createTime(15, 0) },
-            location: "Sala de Reuniões 3",
-            htmlLink: "https://calendar.google.com",
-          },
-          {
-            id: "cal-4",
-            summary: "Alinhamento Operacional Fábrica",
-            description: "⚠️ Reunião urgente convocada pela gerência da fábrica.",
-            start: { dateTime: createTime(14, 30) },
-            end: { dateTime: createTime(15, 30) },
-            location: "Google Meet",
-            htmlLink: "https://meet.google.com",
-          },
-          {
-            id: "cal-5",
-            summary: "Revisão de Boletos e Contas do Mês",
-            description: "Conferir vencimentos de contas de consumo e condomínio.",
-            start: { dateTime: createTime(16, 30) },
-            end: { dateTime: createTime(17, 0) },
-            location: "Home Office",
-            htmlLink: "https://calendar.google.com",
-          },
-        ],
+        accounts: allAccounts.map(toSafeAccount),
+        items: filteredEvents,
       });
     }
 
-    let accessToken = integration.accessToken;
-
-    if (integration.expiresAt && integration.expiresAt.getTime() < Date.now() + 60_000) {
-      if (!integration.refreshToken) {
-        return NextResponse.json(
-          { error: "Autorização do Google precisa ser renovada.", connected: false },
-          { status: 401 },
-        );
-      }
-      accessToken = await refreshGoogleToken(user.id, integration.refreshToken);
-    }
-
+    // Real API fetch across all targeted connected accounts
     const now = new Date();
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
@@ -145,32 +182,50 @@ export async function GET() {
       timeMax: end.toISOString(),
       singleEvents: "true",
       orderBy: "startTime",
-      maxResults: "20",
+      maxResults: "25",
     });
 
-    const callCalendar = (token: string) =>
-      fetch(
-        "https://www.googleapis.com/calendar/v3/calendars/primary/events?" + query,
-        { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
-      );
+    const consolidatedItems: Array<any> = [];
 
-    let response = await callCalendar(accessToken);
+    for (const account of targetAccounts) {
+      try {
+        const token = await getValidAccessToken(account);
+        const response = await fetch(
+          "https://www.googleapis.com/calendar/v3/calendars/primary/events?" + query,
+          { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
+        );
 
-    if (response.status === 401 && integration.refreshToken) {
-      accessToken = await refreshGoogleToken(user.id, integration.refreshToken);
-      response = await callCalendar(accessToken);
+        if (response.ok) {
+          const data = (await response.json()) as { items?: any[] };
+          const items = (data.items ?? []).map((item) => ({
+            ...item,
+            connectedAccountId: account.id,
+            accountEmail: account.email,
+            accountLabel:
+              account.label ?? (account.accountType === "WORK" ? "Profissional" : "Pessoal"),
+            accountType: account.accountType,
+          }));
+          consolidatedItems.push(...items);
+        } else {
+          console.error(`Google Calendar API failed for ${account.email}:`, await response.text());
+        }
+      } catch (err) {
+        console.error(`Failed to fetch calendar for ${account.email}:`, err);
+      }
     }
 
-    if (!response.ok) {
-      const details = await response.text();
-      console.error("Google Calendar API failed:", details);
-      return NextResponse.json(
-        { error: "Não foi possível consultar o Google Calendar." },
-        { status: 502 },
-      );
-    }
+    // Sort all consolidated events chronologically
+    consolidatedItems.sort((a, b) => {
+      const timeA = new Date(a.start?.dateTime ?? a.start?.date ?? 0).getTime();
+      const timeB = new Date(b.start?.dateTime ?? b.start?.date ?? 0).getTime();
+      return timeA - timeB;
+    });
 
-    return NextResponse.json(await response.json());
+    return NextResponse.json({
+      connected: true,
+      accounts: allAccounts.map(toSafeAccount),
+      items: consolidatedItems,
+    });
   } catch (error) {
     console.error("Calendar GET failed:", error);
     return NextResponse.json(

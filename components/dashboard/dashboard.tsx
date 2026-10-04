@@ -34,12 +34,22 @@ import {
   TrendingDown,
   Trash2,
   X,
+  Building2,
+  UserCheck,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { initialTasks, type Task } from "@/lib/mock-data";
+import {
+  ConnectedAccountsModal,
+  type ConnectedAccountApi,
+} from "./connected-accounts-modal";
 
 type GmailApiMessage = {
   id: string;
+  connectedAccountId?: string;
+  accountEmail?: string;
+  accountLabel?: string;
+  accountType?: "PERSONAL" | "WORK" | "OTHER";
   taskId?: string | null;
   threadId?: string;
   sender?: string;
@@ -83,6 +93,10 @@ type PaymentAccountApi = {
 
 type CalendarApiEvent = {
   id: string;
+  connectedAccountId?: string;
+  accountEmail?: string;
+  accountLabel?: string;
+  accountType?: "PERSONAL" | "WORK" | "OTHER";
   summary?: string;
   description?: string;
   location?: string;
@@ -182,23 +196,57 @@ function formatPriceCheckError(message: string) {
   return message;
 }
 
-function detectCalendarConflicts(events: CalendarApiEvent[]): Set<string> {
+type ConflictResult = {
+  conflictIds: Set<string>;
+  crossAccountConflicts: Array<{
+    titleA: string;
+    accountA: string;
+    titleB: string;
+    accountB: string;
+    time: string;
+  }>;
+};
+
+function detectCalendarConflicts(events: CalendarApiEvent[]): ConflictResult {
   const conflictIds = new Set<string>();
+  const crossAccountConflicts: ConflictResult["crossAccountConflicts"] = [];
+
   for (let i = 0; i < events.length; i++) {
-    const startA = events[i].start?.dateTime ? new Date(events[i].start!.dateTime!).getTime() : null;
-    const endA = events[i].end?.dateTime ? new Date(events[i].end!.dateTime!).getTime() : null;
+    const eventA = events[i];
+    if (!eventA) continue;
+    const startA = eventA.start?.dateTime ? new Date(eventA.start.dateTime).getTime() : null;
+    const endA = eventA.end?.dateTime ? new Date(eventA.end.dateTime).getTime() : null;
     if (!startA || !endA) continue;
     for (let j = i + 1; j < events.length; j++) {
-      const startB = events[j].start?.dateTime ? new Date(events[j].start!.dateTime!).getTime() : null;
-      const endB = events[j].end?.dateTime ? new Date(events[j].end!.dateTime!).getTime() : null;
+      const eventB = events[j];
+      if (!eventB) continue;
+      const startB = eventB.start?.dateTime ? new Date(eventB.start.dateTime).getTime() : null;
+      const endB = eventB.end?.dateTime ? new Date(eventB.end.dateTime).getTime() : null;
       if (!startB || !endB) continue;
       if (startA < endB && startB < endA) {
-        conflictIds.add(events[i].id);
-        conflictIds.add(events[j].id);
+        conflictIds.add(eventA.id);
+        conflictIds.add(eventB.id);
+
+        const emailA = eventA.accountEmail;
+        const emailB = eventB.accountEmail;
+        if (
+          emailA &&
+          emailB &&
+          emailA.toLowerCase() !== emailB.toLowerCase()
+        ) {
+          const startDate = new Date(Math.max(startA, startB));
+          crossAccountConflicts.push({
+            titleA: eventA.summary ?? "Compromisso",
+            accountA: eventA.accountLabel || (eventA.accountType === "WORK" ? "Profissional" : "Pessoal"),
+            titleB: eventB.summary ?? "Compromisso",
+            accountB: eventB.accountLabel || (eventB.accountType === "WORK" ? "Profissional" : "Pessoal"),
+            time: startDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          });
+        }
       }
     }
   }
-  return conflictIds;
+  return { conflictIds, crossAccountConflicts };
 }
 
 const useDemoFixtures = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -219,6 +267,25 @@ export default function Dashboard() {
   const [mobile, setMobile] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [databaseError, setDatabaseError] = useState(false);
+
+  // Connected Accounts State
+  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccountApi[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsModalOpen, setAccountsModalOpen] = useState(false);
+  const [selectedCalendarAccount, setSelectedCalendarAccount] = useState<string>("all");
+  const [selectedGmailAccount, setSelectedGmailAccount] = useState<string>("all");
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
+  const [disconnectingAccountId, setDisconnectingAccountId] = useState<string | null>(null);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [editingAccountLabel, setEditingAccountLabel] = useState("");
+  const [editingAccountType, setEditingAccountType] = useState<"PERSONAL" | "WORK" | "OTHER">("PERSONAL");
+  const [accountActionMessage, setAccountActionMessage] = useState<string | null>(null);
+  const [addAccountModalOpen, setAddAccountModalOpen] = useState(false);
+  const [newAccountEmail, setNewAccountEmail] = useState("");
+  const [newAccountLabel, setNewAccountLabel] = useState("");
+  const [newAccountTypeChoice, setNewAccountTypeChoice] = useState<"PERSONAL" | "WORK">("WORK");
+  const [addingAccountLoading, setAddingAccountLoading] = useState(false);
+
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarError, setCalendarError] = useState(false);
@@ -287,6 +354,160 @@ export default function Dashboard() {
     window.localStorage.setItem("painel-da-vida-theme", nextTheme);
   }
 
+  async function loadAccounts() {
+    setAccountsLoading(true);
+    try {
+      const res = await fetch("/api/integrations/accounts", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setConnectedAccounts(data.accounts ?? []);
+      }
+    } catch (e) {
+      console.error("Error loading connected accounts:", e);
+    } finally {
+      setAccountsLoading(false);
+    }
+  }
+
+  async function loadCalendar(accId?: string) {
+    const targetId = accId !== undefined ? accId : selectedCalendarAccount;
+    setCalendarLoading(true);
+    try {
+      const query = targetId && targetId !== "all" ? `?accountId=${encodeURIComponent(targetId)}` : "";
+      const response = await fetch(`/api/calendar/events${query}`, { cache: "no-store" });
+      if (response.status === 409 || response.status === 401) {
+        throw new Error("Google Calendar não autorizado.");
+      }
+      if (!response.ok) throw new Error("Falha ao carregar agenda.");
+      const data = (await response.json()) as { items?: CalendarApiEvent[] };
+      setRealCalendarEvents(data.items ?? []);
+      setCalendarError(false);
+    } catch {
+      setCalendarError(true);
+    } finally {
+      setCalendarLoading(false);
+    }
+  }
+
+  async function loadGmail(accId?: string) {
+    const targetId = accId !== undefined ? accId : selectedGmailAccount;
+    setGmailLoading(true);
+    try {
+      const params = new URLSearchParams({ includeNoise: "true" });
+      if (targetId && targetId !== "all") params.set("accountId", targetId);
+      const response = await fetch(`/api/gmail/messages?${params.toString()}`, { cache: "no-store" });
+      if (response.status === 409 || response.status === 401) {
+        throw new Error("Gmail não autorizado.");
+      }
+      if (!response.ok) throw new Error("Falha ao carregar Gmail.");
+      const data = (await response.json()) as { messages?: GmailApiMessage[] };
+      setGmailMessages(data.messages ?? []);
+      setGmailError(false);
+    } catch {
+      setGmailError(true);
+    } finally {
+      setGmailLoading(false);
+    }
+  }
+
+  async function handleSyncAccount(accountId: string) {
+    setSyncingAccountId(accountId);
+    setAccountActionMessage(null);
+    try {
+      const res = await fetch(`/api/integrations/accounts/${accountId}/sync`, { method: "POST" });
+      if (res.ok) {
+        setAccountActionMessage("Conta sincronizada com sucesso!");
+        await loadAccounts();
+        await loadCalendar();
+        await loadGmail();
+      } else {
+        const err = await res.json();
+        setAccountActionMessage(err.error || "Falha ao sincronizar conta.");
+      }
+    } catch {
+      setAccountActionMessage("Erro ao tentar sincronizar.");
+    } finally {
+      setSyncingAccountId(null);
+    }
+  }
+
+  async function handleUpdateAccount(
+    accountId: string,
+    updates: { label?: string; accountType?: "PERSONAL" | "WORK" | "OTHER" }
+  ) {
+    try {
+      const res = await fetch(`/api/integrations/accounts/${accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        await loadAccounts();
+        setEditingAccountId(null);
+        setAccountActionMessage("Conta atualizada com sucesso.");
+      }
+    } catch (e) {
+      console.error("Error updating account:", e);
+    }
+  }
+
+  async function handleDisconnectAccount(accountId: string) {
+    if (!window.confirm("Deseja realmente desconectar esta conta? As outras contas conectadas continuarão ativas e seu login no Painel da Vida permanecerá seguro.")) {
+      return;
+    }
+    setDisconnectingAccountId(accountId);
+    setAccountActionMessage(null);
+    try {
+      const res = await fetch(`/api/integrations/accounts/${accountId}`, { method: "DELETE" });
+      if (res.ok) {
+        setAccountActionMessage("Conta desconectada com sucesso.");
+        await loadAccounts();
+        await loadCalendar();
+        await loadGmail();
+      }
+    } catch (e) {
+      console.error("Error disconnecting account:", e);
+    } finally {
+      setDisconnectingAccountId(null);
+    }
+  }
+
+  async function handleAddSimulatedAccount(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newAccountEmail.trim()) return;
+    setAddingAccountLoading(true);
+    setAccountActionMessage(null);
+    try {
+      const res = await fetch("/api/integrations/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newAccountEmail.trim(),
+          label:
+            newAccountLabel.trim() ||
+            (newAccountTypeChoice === "WORK" ? "Google — profissional" : "Google — pessoal"),
+          accountType: newAccountTypeChoice,
+        }),
+      });
+      if (res.ok) {
+        await loadAccounts();
+        await loadCalendar();
+        await loadGmail();
+        setNewAccountEmail("");
+        setNewAccountLabel("");
+        setAddAccountModalOpen(false);
+        setAccountActionMessage("Conta conectada com sucesso!");
+      } else {
+        const err = await res.json();
+        setAccountActionMessage(err.error || "Erro ao conectar conta.");
+      }
+    } catch {
+      setAccountActionMessage("Erro de rede ao conectar conta.");
+    } finally {
+      setAddingAccountLoading(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -307,48 +528,9 @@ export default function Dashboard() {
     }
 
     void loadTasks();
-
-    async function loadCalendar() {
-      try {
-        const response = await fetch("/api/calendar/events", { cache: "no-store" });
-        if (response.status === 409 || response.status === 401) {
-          throw new Error("Google Calendar não autorizado.");
-        }
-        if (!response.ok) throw new Error("Falha ao carregar agenda.");
-        const data = (await response.json()) as { items?: CalendarApiEvent[] };
-        if (!cancelled) {
-          setRealCalendarEvents(data.items ?? []);
-          setCalendarError(false);
-        }
-      } catch {
-        if (!cancelled) setCalendarError(true);
-      } finally {
-        if (!cancelled) setCalendarLoading(false);
-      }
-    }
-
-    void loadCalendar();
-
-    async function loadGmail() {
-      try {
-        const response = await fetch("/api/gmail/messages?includeNoise=true", { cache: "no-store" });
-        if (response.status === 409 || response.status === 401) {
-          throw new Error("Gmail não autorizado.");
-        }
-        if (!response.ok) throw new Error("Falha ao carregar Gmail.");
-        const data = (await response.json()) as { messages?: GmailApiMessage[] };
-        if (!cancelled) {
-          setGmailMessages(data.messages ?? []);
-          setGmailError(false);
-        }
-      } catch {
-        if (!cancelled) setGmailError(true);
-      } finally {
-        if (!cancelled) setGmailLoading(false);
-      }
-    }
-
-    void loadGmail();
+    void loadAccounts();
+    void loadCalendar("all");
+    void loadGmail("all");
 
     async function loadBills() {
       try {
@@ -512,6 +694,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           externalId: message.id,
           threadId: message.threadId,
+          connectedAccountId: message.connectedAccountId,
           sender,
           subject,
           snippet: message.snippet ?? "",
@@ -621,7 +804,8 @@ export default function Dashboard() {
   }
 
   // Conflict detection
-  const conflictIds = useMemo(() => detectCalendarConflicts(realCalendarEvents), [realCalendarEvents]);
+  const conflictInfo = useMemo(() => detectCalendarConflicts(realCalendarEvents), [realCalendarEvents]);
+  const conflictIds = conflictInfo.conflictIds;
 
   // Calculations for Summary Header ("Seu dia em 30 segundos")
   const openBills = useMemo(() => bills.filter((bill) => bill.status !== "PAID"), [bills]);
@@ -702,7 +886,10 @@ export default function Dashboard() {
       <div className="flex min-h-screen">
         {/* Sidebar Desktop */}
         <aside className="hidden w-[260px] shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
-          <Sidebar />
+          <Sidebar
+            connectedAccounts={connectedAccounts}
+            onOpenAccountsModal={() => setAccountsModalOpen(true)}
+          />
         </aside>
 
         {/* Mobile Backdrop */}
@@ -726,7 +913,13 @@ export default function Dashboard() {
                 <X size={20} />
               </button>
             </div>
-            <SidebarContent />
+            <SidebarContent
+              connectedAccounts={connectedAccounts}
+              onOpenAccountsModal={() => {
+                setAccountsModalOpen(true);
+                setMobile(false);
+              }}
+            />
           </div>
         </aside>
 
@@ -757,10 +950,17 @@ export default function Dashboard() {
               >
                 {darkMode ? <Sun size={17} /> : <Moon size={17} />}
               </button>
-              <span className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:inline-flex">
+              <button
+                type="button"
+                onClick={() => setAccountsModalOpen(true)}
+                title="Clique para gerenciar suas contas Google conectadas"
+                className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:inline-flex hover:bg-emerald-100 transition cursor-pointer"
+              >
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                Google Conectado
-              </span>
+                {connectedAccounts.length > 1
+                  ? `${connectedAccounts.length} Contas Conectadas`
+                  : "Google Conectado"}
+              </button>
 
               {/* Notifications Dropdown */}
               <div ref={notificationsRef} className="relative">
@@ -838,6 +1038,19 @@ export default function Dashboard() {
                       <p className="text-xs font-semibold text-slate-800">Fábio Teraoka</p>
                       <p className="text-[11px] text-slate-400 truncate">Painel da Vida</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountsModalOpen(true);
+                        setProfileOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold text-indigo-700 hover:bg-indigo-50 transition"
+                    >
+                      <span>Contas Conectadas</span>
+                      <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] text-indigo-800 font-bold">
+                        {connectedAccounts.length}
+                      </span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => void signOut({ callbackUrl: "/login" })}
@@ -1119,12 +1332,82 @@ export default function Dashboard() {
               {/* AGENDA */}
               <div className="space-y-6" id="agenda">
                 <Card
-                  title="Agenda do Dia"
+                  title="Agenda Consolidada do Dia"
                   icon={<CalendarDays size={19} className="text-blue-600" />}
                   action="Abrir Google Agenda"
                   actionHref="https://calendar.google.com/calendar/u/0/r/day"
                 >
-                  {conflictIds.size > 0 && (
+                  {/* Account Selector Filter */}
+                  <div className="mb-3 flex items-center justify-between gap-2 flex-wrap border-b border-slate-100 pb-2.5">
+                    <div className="flex items-center gap-1 overflow-x-auto text-xs font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCalendarAccount("all");
+                          void loadCalendar("all");
+                        }}
+                        className={`rounded-lg px-2.5 py-1 transition ${
+                          selectedCalendarAccount === "all"
+                            ? "bg-blue-600 text-white"
+                            : "text-slate-500 hover:bg-slate-100"
+                        }`}
+                      >
+                        Todas as contas (Consolidada)
+                      </button>
+                      {connectedAccounts.map((acc) => {
+                        const isWork = acc.accountType === "WORK";
+                        const active = selectedCalendarAccount === acc.id;
+                        return (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCalendarAccount(acc.id);
+                              void loadCalendar(acc.id);
+                            }}
+                            className={`rounded-lg px-2.5 py-1 inline-flex items-center gap-1.5 transition ${
+                              active
+                                ? isWork ? "bg-purple-600 text-white" : "bg-blue-600 text-white"
+                                : "text-slate-500 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                isWork ? "bg-purple-300" : "bg-blue-300"
+                              }`}
+                            />
+                            {acc.label || (isWork ? "Google — profissional" : "Google — pessoal")}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setAccountsModalOpen(true)}
+                      className="text-[11px] font-semibold text-indigo-600 hover:underline inline-flex items-center gap-1 shrink-0"
+                    >
+                      <Plus size={13} /> Gerenciar contas
+                    </button>
+                  </div>
+
+                  {/* Cross-calendar conflict alert */}
+                  {conflictInfo.crossAccountConflicts.length > 0 && (
+                    <div className="mb-3 rounded-xl border border-red-200 bg-red-50/80 p-3 text-xs text-red-900 space-y-1.5 shadow-2xs">
+                      <div className="flex items-center gap-2 font-bold text-red-800">
+                        <AlertTriangle size={16} className="text-red-600 shrink-0" />
+                        <span>⚠️ Conflito entre calendários detectado: compromisso pessoal e profissional sobrepostos!</span>
+                      </div>
+                      {conflictInfo.crossAccountConflicts.map((c, i) => (
+                        <p key={i} className="text-[11px] text-red-700 pl-6 leading-relaxed">
+                          • Às {c.time}: <strong>[{c.accountA}] &ldquo;{c.titleA}&rdquo;</strong> coincide com{" "}
+                          <strong>[{c.accountB}] &ldquo;{c.titleB}&rdquo;</strong>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {conflictIds.size > 0 && conflictInfo.crossAccountConflicts.length === 0 && (
                     <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 flex items-center gap-2">
                       <AlertTriangle size={16} className="text-amber-600 shrink-0" />
                       <span>
@@ -1140,7 +1423,7 @@ export default function Dashboard() {
                       <div className="py-6 text-center text-sm text-slate-500">
                         {calendarError
                           ? "Google Calendar não conectado ou permissão pendente."
-                          : "Nenhum compromisso agendado para hoje."}
+                          : "Nenhum compromisso agendado para hoje nesta visualização."}
                       </div>
                     ) : (
                       realCalendarEvents.map((event) => {
@@ -1150,15 +1433,30 @@ export default function Dashboard() {
                           ? start.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
                           : "Dia todo";
                         const isConflict = conflictIds.has(event.id);
+                        const isWork = event.accountType === "WORK";
 
                         return (
                           <div key={event.id} className="flex gap-4 py-3.5 first:pt-1">
                             <div className="w-[60px] shrink-0 text-sm font-bold text-slate-600">{time}</div>
                             <div className={`flex-1 min-w-0 border-l-2 pl-3.5 ${isConflict ? "border-amber-400 bg-amber-50/30 rounded-r-xl py-1" : "border-slate-200"}`}>
-                              <div className="flex items-center justify-between gap-2">
-                                <h3 className="text-sm font-semibold text-slate-800 truncate">
-                                  {event.summary ?? "Sem título"}
-                                </h3>
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <h3 className="text-sm font-semibold text-slate-800 truncate">
+                                    {event.summary ?? "Sem título"}
+                                  </h3>
+                                  {event.accountLabel && (
+                                    <span
+                                      className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold shrink-0 ${
+                                        isWork
+                                          ? "bg-purple-100 text-purple-800 border border-purple-200"
+                                          : "bg-blue-100 text-blue-800 border border-blue-200"
+                                      }`}
+                                      title={event.accountEmail}
+                                    >
+                                      {isWork ? "💼 Profissional" : "👤 Pessoal"}
+                                    </span>
+                                  )}
+                                </div>
                                 {event.htmlLink && (
                                   <a
                                     href={event.htmlLink}
@@ -1475,6 +1773,62 @@ export default function Dashboard() {
                     action="Abrir Gmail"
                     actionHref="https://mail.google.com/mail/u/0/#inbox"
                   >
+                    {/* Account filter tabs for Gmail */}
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                      <div className="flex flex-wrap items-center gap-1 text-xs font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedGmailAccount("all");
+                            void loadGmail("all");
+                          }}
+                          className={`rounded-lg px-2.5 py-1 transition ${
+                            selectedGmailAccount === "all"
+                              ? "bg-purple-600 text-white"
+                              : "text-slate-500 hover:bg-slate-100"
+                          }`}
+                        >
+                          Todas as contas (Consolidado)
+                        </button>
+                        {connectedAccounts.map((acc) => {
+                          const isWork = acc.accountType === "WORK";
+                          const active = selectedGmailAccount === acc.id;
+                          return (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedGmailAccount(acc.id);
+                                void loadGmail(acc.id);
+                              }}
+                              className={`rounded-lg px-2.5 py-1 inline-flex items-center gap-1.5 transition ${
+                                active
+                                  ? isWork
+                                    ? "bg-purple-700 text-white"
+                                    : "bg-blue-600 text-white"
+                                  : "text-slate-500 hover:bg-slate-100"
+                              }`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  isWork ? "bg-purple-300" : "bg-blue-300"
+                                }`}
+                              />
+                              {acc.label || (isWork ? "Google — profissional" : "Google — pessoal")}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setAccountsModalOpen(true)}
+                        className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-1 shrink-0"
+                      >
+                        <Plus size={13} /> Gerenciar contas
+                      </button>
+                    </div>
+
                     {/* Category tabs */}
                     <div className="mb-3 flex items-center gap-1 border-b border-slate-100 pb-2 overflow-x-auto text-xs font-semibold">
                       <button
@@ -1520,6 +1874,7 @@ export default function Dashboard() {
                           const subject = headers.find((h) => h.name.toLowerCase() === "subject")?.value ?? "(Sem assunto)";
                           const from = headers.find((h) => h.name.toLowerCase() === "from")?.value ?? "Remetente desconhecido";
                           const category = message.dashboardCategory ?? "INFORMATIVE";
+                          const isWork = message.accountType === "WORK";
 
                           return (
                             <div
@@ -1527,9 +1882,23 @@ export default function Dashboard() {
                               className="rounded-xl border border-slate-100 bg-white p-3 hover:bg-slate-50/70 transition"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <span className="truncate text-xs font-semibold text-slate-600 max-w-[200px]">
-                                  {from}
-                                </span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="truncate text-xs font-semibold text-slate-600 max-w-[150px] sm:max-w-[200px]">
+                                    {from}
+                                  </span>
+                                  {message.accountLabel && (
+                                    <span
+                                      className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold shrink-0 ${
+                                        isWork
+                                          ? "bg-purple-100 text-purple-800 border border-purple-200"
+                                          : "bg-blue-100 text-blue-800 border border-blue-200"
+                                      }`}
+                                      title={message.accountEmail}
+                                    >
+                                      {isWork ? "💼 Profissional" : "👤 Pessoal"}
+                                    </span>
+                                  )}
+                                </div>
                                 {category === "RESPOND_TODAY" && (
                                   <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 shrink-0">
                                     Responder hoje
@@ -1726,22 +2095,50 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* MODAL DE CONTAS CONECTADAS */}
+      <ConnectedAccountsModal
+        isOpen={accountsModalOpen}
+        onClose={() => setAccountsModalOpen(false)}
+        accounts={connectedAccounts}
+        onAccountsUpdated={() => {
+          void loadAccounts();
+          void loadCalendar();
+          void loadGmail();
+        }}
+        isDemoMode={useDemoFixtures}
+      />
     </main>
   );
 }
 
-function Sidebar() {
+function Sidebar({
+  connectedAccounts = [],
+  onOpenAccountsModal,
+}: {
+  connectedAccounts?: ConnectedAccountApi[];
+  onOpenAccountsModal?: () => void;
+}) {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-100 p-5">
         <Logo />
       </div>
-      <SidebarContent />
+      <SidebarContent
+        connectedAccounts={connectedAccounts}
+        onOpenAccountsModal={onOpenAccountsModal}
+      />
     </div>
   );
 }
 
-function SidebarContent() {
+function SidebarContent({
+  connectedAccounts = [],
+  onOpenAccountsModal,
+}: {
+  connectedAccounts?: ConnectedAccountApi[];
+  onOpenAccountsModal?: () => void;
+}) {
   return (
     <div className="flex flex-1 flex-col p-4">
       <nav className="space-y-1">
@@ -1753,13 +2150,52 @@ function SidebarContent() {
         <Nav icon={<ShoppingCart size={18} />} label="Preços & Compras" targetId="compras" />
       </nav>
 
-      <div className="mt-8">
-        <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-          Integrações
-        </p>
-        <Connection label="Google Calendar" status="Sincronizado" color="bg-emerald-500" />
-        <Connection label="Gmail API" status="Classificação Ativa" color="bg-emerald-500" />
-        <Connection label="Monitor de Preços" status="Diário + consulta manual" color="bg-indigo-500" />
+      <div className="mt-6">
+        <div className="flex items-center justify-between px-3 mb-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Contas Conectadas
+          </p>
+          {onOpenAccountsModal && (
+            <button
+              type="button"
+              onClick={onOpenAccountsModal}
+              className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+            >
+              Gerenciar
+            </button>
+          )}
+        </div>
+        <div className="space-y-0.5">
+          {connectedAccounts.length === 0 ? (
+            <Connection label="Google" status="Pendente" color="bg-amber-400" />
+          ) : (
+            connectedAccounts.map((acc) => {
+              const isWork = acc.accountType === "WORK";
+              return (
+                <div
+                  key={acc.id}
+                  onClick={onOpenAccountsModal}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-slate-50 cursor-pointer transition"
+                  title={`${acc.label ?? acc.email} (${acc.email})`}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                      acc.status === "CONNECTED" ? "bg-emerald-500" : "bg-amber-500"
+                    }`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold text-slate-700 truncate">
+                      {acc.label || (isWork ? "Google — profissional" : "Google — pessoal")}
+                    </span>
+                    <span className="block text-[10px] text-slate-400 truncate">
+                      {acc.email}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       <div className="mt-auto pt-6">

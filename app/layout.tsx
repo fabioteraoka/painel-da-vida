@@ -13,14 +13,14 @@ export const metadata: Metadata = {
 export default function RootLayout({children}:{readonly children:React.ReactNode}) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <head>
+      <body>
         <script
           dangerouslySetInnerHTML={{
             __html: `try{const saved=localStorage.getItem("painel-da-vida-theme");document.documentElement.dataset.theme=saved||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch{document.documentElement.dataset.theme="light"}`,
           }}
         />
-      </head>
-      <body>{children}</body>
+        {children}
+      </body>
     </html>
   );
 }

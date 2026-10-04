@@ -17,6 +17,7 @@ model User {
   tasks        Task[]
   events       CalendarEvent[]
   emails       Email[]
+  connectedAccounts ConnectedAccount[]
   integrations Integration[]
   bills       Bill[]
   paymentAccounts PaymentAccount[]
@@ -46,43 +47,49 @@ model Task {
 }
 
 model CalendarEvent {
-  id          String   @id @default(cuid())
-  externalId  String?
-  title       String
-  description String?
-  startAt     DateTime
-  endAt       DateTime
-  location    String?
-  source      String   @default("local")
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String            @id @default(cuid())
+  externalId         String?
+  title              String
+  description        String?
+  startAt            DateTime
+  endAt              DateTime
+  location           String?
+  source             String            @default("local")
+  userId             String
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectedAccountId String?
+  connectedAccount   ConnectedAccount? @relation(fields: [connectedAccountId], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([userId])
+  @@index([connectedAccountId])
   @@index([startAt])
 }
 
 model Email {
-  id          String        @id @default(cuid())
-  externalId  String?
-  threadId    String?
-  sender      String
-  senderName  String?
-  subject     String
-  snippet     String?
-  receivedAt  DateTime
-  category    EmailCategory @default(INFORMATIVE)
-  needsAction Boolean       @default(false)
-  isRead      Boolean       @default(false)
-  source      String        @default("local")
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  task        Task?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id                 String            @id @default(cuid())
+  externalId         String?
+  threadId           String?
+  sender             String
+  senderName         String?
+  subject            String
+  snippet            String?
+  receivedAt         DateTime
+  category           EmailCategory     @default(INFORMATIVE)
+  needsAction        Boolean           @default(false)
+  isRead             Boolean           @default(false)
+  source             String            @default("local")
+  userId             String
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectedAccountId String?
+  connectedAccount   ConnectedAccount? @relation(fields: [connectedAccountId], references: [id], onDelete: SetNull)
+  task               Task?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([userId])
+  @@index([connectedAccountId])
   @@index([receivedAt])
   @@index([needsAction])
   @@unique([userId, externalId])
@@ -141,6 +148,8 @@ model Bill {
   responsibleName     String?
   responsiblePersonId String?
   responsiblePerson   Person? @relation(fields: [responsiblePersonId], references: [id], onDelete: SetNull)
+  connectedAccountId String?
+  connectedAccount   ConnectedAccount? @relation(fields: [connectedAccountId], references: [id], onDelete: SetNull)
   paymentUrl          String?
   pixCode             String?
   barcode             String?
@@ -151,6 +160,53 @@ model Bill {
   @@unique([userId, externalEmailId])
   @@index([userId, dueDate])
   @@index([userId, status])
+  @@index([connectedAccountId])
+}
+
+model ConnectedAccount {
+  id             String               @id @default(cuid())
+  userId         String
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       AccountProvider      @default(GOOGLE)
+  externalUserId String?
+  email          String
+  name           String?
+  label          String?              // Ex: "Google — pessoal", "Google — profissional"
+  accountType    ConnectedAccountType @default(PERSONAL)
+  accessToken    String?
+  refreshToken   String?
+  expiresAt      DateTime?
+  status         ConnectionStatus     @default(CONNECTED)
+  scopes         String?
+  lastSyncAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  emails         Email[]
+  calendarEvents CalendarEvent[]
+  bills          Bill[]
+
+  @@unique([userId, provider, email])
+  @@index([userId, provider])
+  @@index([userId, status])
+}
+
+enum AccountProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum ConnectedAccountType {
+  PERSONAL
+  WORK
+  OTHER
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  EXPIRED
 }
 
 enum PaymentAccountType {

@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { prisma, isDemoMode } from "@/lib/prisma";
+import { upsertConnectedAccount } from "@/lib/connected-accounts";
 
 const GOOGLE_CALENDAR_SCOPE =
   "https://www.googleapis.com/auth/calendar.readonly";
@@ -24,27 +25,28 @@ const nextAuth = NextAuth({
     process.env.AUTH_SECRET ??
     process.env.NEXTAUTH_SECRET ??
     (isDemoMode ? "painel-da-vida-demo-secret-key" : undefined),
-  // Do not fail the production build when runtime secrets are not available in the build environment.
-  // The auth() guard below reports the missing configuration on requests.
-  providers: hasGoogleCredentials ? [
-    Google({
-      clientId: googleClientId,
-      clientSecret: googleClientSecret,
-      authorization: {
-        params: {
-          scope: `openid email profile ${GOOGLE_CALENDAR_SCOPE} ${GMAIL_SCOPE}`,
-          access_type: "offline",
-          prompt: "consent",
-          include_granted_scopes: "true",
-        },
-      },
-    }),
-  ] : [],
+  providers: hasGoogleCredentials
+    ? [
+        Google({
+          clientId: googleClientId,
+          clientSecret: googleClientSecret,
+          authorization: {
+            params: {
+              scope: `openid email profile ${GOOGLE_CALENDAR_SCOPE} ${GMAIL_SCOPE}`,
+              access_type: "offline",
+              prompt: "consent",
+              include_granted_scopes: "true",
+            },
+          },
+        }),
+      ]
+    : [],
   pages: {
     signIn: "/login",
   },
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 dias de sessão persistente
   },
   trustHost: true,
   callbacks: {
@@ -59,53 +61,47 @@ const nextAuth = NextAuth({
         });
 
         const accessToken = account?.access_token;
+        if (accessToken) {
+          const expiresIn = account.expires_at
+            ? Math.max(0, account.expires_at - Math.floor(Date.now() / 1000))
+            : 3600;
 
-        if (!accessToken) {
-          console.error("Google login completed without an access token.");
-          return true;
-        }
-
-        const integrations: Array<"GOOGLE_CALENDAR" | "GMAIL"> = [
-          "GOOGLE_CALENDAR",
-          "GMAIL",
-        ];
-
-        for (const provider of integrations) {
-          await prisma.integration.upsert({
-            where: {
-              userId_provider: {
-                userId: dbUser.id,
-                provider,
-              },
-            },
-            update: {
-              status: "CONNECTED",
-              externalUserId: account.providerAccountId,
-              accessToken,
-              refreshToken: account.refresh_token ?? undefined,
-              expiresAt: account.expires_at
-                ? new Date(account.expires_at * 1000)
-                : null,
-            },
-            create: {
-              userId: dbUser.id,
-              provider,
-              status: "CONNECTED",
-              externalUserId: account.providerAccountId,
-              accessToken,
-              refreshToken: account.refresh_token ?? null,
-              expiresAt: account.expires_at
-                ? new Date(account.expires_at * 1000)
-                : null,
-            },
+          await upsertConnectedAccount({
+            userId: dbUser.id,
+            provider: "GOOGLE",
+            email: user.email,
+            externalUserId: account.providerAccountId,
+            name: user.name ?? user.email,
+            accountType: user.email.toLowerCase().endsWith("@gmail.com") ? "PERSONAL" : "WORK",
+            label: user.email.toLowerCase().endsWith("@gmail.com") ? "Google — pessoal" : "Google — profissional",
+            accessToken,
+            refreshToken: account.refresh_token ?? null,
+            expiresIn,
+            scopes: account.scope ?? undefined,
           });
         }
 
         return true;
       } catch (error) {
-        console.error("Google login/integration setup failed:", error);
+        console.error("Google login/connected account setup failed:", error);
         return isDemoMode;
       }
+    },
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user.id = (token.id as string) ?? session.user.id;
+        session.user.email = (token.email as string) ?? session.user.email;
+        session.user.name = (token.name as string) ?? session.user.name;
+      }
+      return session;
     },
   },
 });

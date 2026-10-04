@@ -2,14 +2,10 @@ import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; mockStore?: Map<string, Map<string, any>> };
 
-export const isDemoMode = process.env.DEMO_MODE === "true";
-
 export const isDemoMode =
   process.env.DEMO_MODE === "true" ||
   process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
-  process.env.DEMO_MODE !== "false" ||
-  !process.env.DATABASE_URL ||
-  process.env.DATABASE_URL.trim() === "";
+  (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "");
 
 function createMockPrisma(): PrismaClient {
   console.info("[Painel da Vida] Operando com armazenamento local otimizado (Zero-Config)");
@@ -39,11 +35,32 @@ function createMockPrisma(): PrismaClient {
           ? getStore("person").get(copy.responsiblePersonId) ?? null
           : null;
       }
+      if (include.connectedAccount) {
+        copy.connectedAccount = copy.connectedAccountId
+          ? getStore("connectedaccount").get(copy.connectedAccountId) ?? null
+          : null;
+      }
+    }
+
+    if (m === "email" || m === "calendarevent") {
+      if (include.connectedAccount) {
+        copy.connectedAccount = copy.connectedAccountId
+          ? getStore("connectedaccount").get(copy.connectedAccountId) ?? null
+          : null;
+      }
     }
 
     if (m === "task") {
       if (include.bill) {
         copy.bill = copy.billId ? getStore("bill").get(copy.billId) ?? null : null;
+      }
+    }
+
+    if (m === "user") {
+      if (include.connectedAccounts) {
+        copy.connectedAccounts = Array.from(getStore("connectedaccount").values()).filter(
+          (a: any) => a.userId === item.id,
+        );
       }
     }
 
@@ -73,6 +90,7 @@ function createMockPrisma(): PrismaClient {
     const productStore = getStore("monitoredproduct");
     const billStore = getStore("bill");
     const taskStore = getStore("task");
+    const connectedAccountStore = getStore("connectedaccount");
 
     const defaultUserId = "user-fabio-teraoka";
     userStore.set(defaultUserId, {
@@ -80,6 +98,44 @@ function createMockPrisma(): PrismaClient {
       name: "Fábio Teraoka",
       email: "fteraoka@gmail.com",
       createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    connectedAccountStore.set("acc-google-personal", {
+      id: "acc-google-personal",
+      userId: defaultUserId,
+      provider: "GOOGLE",
+      externalUserId: "google-sub-fabio-personal",
+      email: "fteraoka@gmail.com",
+      name: "Fábio Teraoka",
+      label: "Google — pessoal",
+      accountType: "PERSONAL",
+      accessToken: "demo-token-personal",
+      refreshToken: "demo-refresh-personal",
+      expiresAt: new Date(Date.now() + 3600 * 1000),
+      status: "CONNECTED",
+      scopes: "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly",
+      lastSyncAt: new Date(Date.now() - 15 * 60 * 1000),
+      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+    });
+
+    connectedAccountStore.set("acc-google-work", {
+      id: "acc-google-work",
+      userId: defaultUserId,
+      provider: "GOOGLE",
+      externalUserId: "google-sub-fabio-work",
+      email: "fabio@empresa.com.br",
+      name: "Fábio Teraoka (Trabalho)",
+      label: "Google — profissional",
+      accountType: "WORK",
+      accessToken: "demo-token-work",
+      refreshToken: "demo-refresh-work",
+      expiresAt: new Date(Date.now() + 3600 * 1000),
+      status: "CONNECTED",
+      scopes: "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly",
+      lastSyncAt: new Date(Date.now() - 5 * 60 * 1000),
+      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
       updatedAt: new Date(),
     });
 
@@ -435,6 +491,17 @@ function createMockPrisma(): PrismaClient {
             break;
           }
         }
+      } else if (args?.where?.userId_provider_email) {
+        for (const v of store.values()) {
+          if (
+            v.userId === args.where.userId_provider_email.userId &&
+            v.provider === args.where.userId_provider_email.provider &&
+            v.email?.toLowerCase() === args.where.userId_provider_email.email?.toLowerCase()
+          ) {
+            found = v;
+            break;
+          }
+        }
       } else {
         found = Array.from(store.values()).find((item: any) => matchesWhere(item, args?.where)) ?? null;
       }
@@ -491,6 +558,17 @@ function createMockPrisma(): PrismaClient {
           if (
             v.userId === args.where.userId_provider.userId &&
             v.provider === args.where.userId_provider.provider
+          ) {
+            found = v;
+            break;
+          }
+        }
+      } else if (args?.where?.userId_provider_email) {
+        for (const v of store.values()) {
+          if (
+            v.userId === args.where.userId_provider_email.userId &&
+            v.provider === args.where.userId_provider_email.provider &&
+            v.email?.toLowerCase() === args.where.userId_provider_email.email?.toLowerCase()
           ) {
             found = v;
             break;

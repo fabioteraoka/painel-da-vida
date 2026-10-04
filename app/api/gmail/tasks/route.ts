@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 const createTaskSchema = z.object({
   externalId: z.string().trim().min(1).max(255),
   threadId: z.string().max(255).optional(),
+  connectedAccountId: z.string().optional(),
   sender: z.string().trim().min(1).max(500),
   subject: z.string().trim().min(1).max(500),
   snippet: z.string().max(2000).optional(),
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
         create: {
           externalId: input.externalId,
           threadId: input.threadId ?? null,
+          connectedAccountId: input.connectedAccountId ?? null,
           sender: input.sender,
           subject: input.subject,
           snippet: input.snippet ?? null,
@@ -53,6 +55,7 @@ export async function POST(request: Request) {
         },
         update: {
           threadId: input.threadId ?? null,
+          connectedAccountId: input.connectedAccountId ?? undefined,
           sender: input.sender,
           subject: input.subject,
           snippet: input.snippet ?? null,

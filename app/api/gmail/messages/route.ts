@@ -4,6 +4,11 @@ import { prisma, isDemoMode } from "@/lib/prisma";
 import { generateObject } from "ai";
 import { aiModel, isAiGatewayAvailable } from "@/lib/ai-gateway";
 import { z } from "zod";
+import {
+  listUserConnectedAccounts,
+  getValidAccessToken,
+  toSafeAccount,
+} from "@/lib/connected-accounts";
 
 const emailFilterSchema = z.object({
   relevant: z.boolean(),
@@ -106,7 +111,7 @@ async function classifyDashboardEmail(input: { from: string; subject: string; sn
         model: aiModel,
         schema: emailFilterSchema,
         system:
-          "Você filtra e-mails pessoais para um painel diário. Classifique em: RESPOND_TODAY (exige resposta hoje), FOLLOW_UP (acompanhar), INFORMATIVE (útil/banco/documento sem ação), NOISE (propaganda, newsletter, promoções).",
+          "Você filtra e-mails para um painel diário. Classifique em: RESPOND_TODAY (exige resposta hoje), FOLLOW_UP (acompanhar), INFORMATIVE (útil/banco/documento sem ação), NOISE (propaganda, newsletter, promoções).",
         prompt: JSON.stringify(input),
       });
       return object;
@@ -121,31 +126,11 @@ async function classifyDashboardEmail(input: { from: string; subject: string; sn
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function refreshGoogleToken(userId: string, refreshToken: string) {
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: process.env.AUTH_GOOGLE_ID ?? "",
-      client_secret: process.env.AUTH_GOOGLE_SECRET ?? "",
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
-  if (!response.ok) throw new Error("Não foi possível renovar o token.");
-  const data = (await response.json()) as { access_token: string; expires_in?: number };
-  await prisma.integration.update({
-    where: { userId_provider: { userId, provider: "GMAIL" } },
-    data: {
-      accessToken: data.access_token,
-      expiresAt: new Date(Date.now() + (data.expires_in ?? 3600) * 1000),
-      status: "CONNECTED",
-    },
-  });
-  return data.access_token;
-}
-
-async function fetchAndClassifyMessages(token: string, includeNoise = false) {
+async function fetchAndClassifyMessages(
+  token: string,
+  accountInfo: { id: string; email: string; label: string; accountType: string },
+  includeNoise = false,
+) {
   const listResponse = await fetch(
     "https://gmail.googleapis.com/gmail/v1/users/me/messages?" +
       new URLSearchParams({ maxResults: "25", q: "newer_than:7d" }),
@@ -153,12 +138,12 @@ async function fetchAndClassifyMessages(token: string, includeNoise = false) {
   );
 
   if (!listResponse.ok) {
-    throw new Error("Não foi possível consultar o Gmail.");
+    throw new Error(`Não foi possível consultar o Gmail para a conta ${accountInfo.email}.`);
   }
 
   const list = (await listResponse.json()) as { messages?: { id: string; threadId: string }[] };
   const items = await Promise.all(
-    (list.messages ?? []).slice(0, 20).map(async (message) => {
+    (list.messages ?? []).slice(0, 15).map(async (message) => {
       const detailResponse = await fetch(
         "https://gmail.googleapis.com/gmail/v1/users/me/messages/" +
           message.id +
@@ -170,6 +155,7 @@ async function fetchAndClassifyMessages(token: string, includeNoise = false) {
         id: string;
         threadId?: string;
         snippet?: string;
+        internalDate?: string;
         labelIds?: string[];
         payload?: { headers?: { name: string; value: string }[] };
       };
@@ -189,6 +175,10 @@ async function fetchAndClassifyMessages(token: string, includeNoise = false) {
 
       return {
         ...detail,
+        connectedAccountId: accountInfo.id,
+        accountEmail: accountInfo.email,
+        accountLabel: accountInfo.label,
+        accountType: accountInfo.accountType,
         dashboardCategory: classification.category,
         dashboardReason: classification.reason,
       };
@@ -231,19 +221,56 @@ export async function GET(req: NextRequest) {
     if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
     const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
-    if (!user) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    const userId = user?.id ?? (isDemoMode ? "user-fabio-teraoka" : null);
 
-    const integration = await prisma.integration.findUnique({
-      where: { userId_provider: { userId: user.id, provider: "GMAIL" } },
-    });
-    if (!integration?.accessToken) {
-      if (!isDemoMode) return NextResponse.json({ error: "Conecte o Gmail para consultar mensagens." }, { status: 409 });
+    if (!userId) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+
+    const allAccounts = await listUserConnectedAccounts(userId);
+    const activeAccounts = allAccounts.filter((a) => a.status === "CONNECTED" && a.provider === "GOOGLE");
+
+    const searchParams = req.nextUrl?.searchParams;
+    const requestedAccountId = searchParams?.get("accountId");
+    const includeNoise = searchParams?.get("includeNoise") === "true";
+
+    const targetAccounts =
+      requestedAccountId && requestedAccountId !== "all"
+        ? activeAccounts.filter((a) => a.id === requestedAccountId)
+        : activeAccounts;
+
+    // If no active accounts are connected
+    if (targetAccounts.length === 0) {
+      if (!isDemoMode) {
+        return NextResponse.json({
+          connected: false,
+          accounts: allAccounts.map(toSafeAccount),
+          messages: [],
+          error: "Nenhuma conta Google conectada para consultar o Gmail.",
+        }, { status: 409 });
+      }
+
+      // Simulated Demo Fixtures with personal and work accounts consolidated
       const now = new Date();
-      const includeNoise = req.nextUrl?.searchParams.get("includeNoise") === "true";
+      const mockPersonalAccount = allAccounts.find((a) => a.accountType === "PERSONAL") ?? {
+        id: "acc-google-personal",
+        email: "fteraoka@gmail.com",
+        label: "Google — pessoal",
+        accountType: "PERSONAL",
+      };
+      const mockWorkAccount = allAccounts.find((a) => a.accountType === "WORK") ?? {
+        id: "acc-google-work",
+        email: "fabio@empresa.com.br",
+        label: "Google — profissional",
+        accountType: "WORK",
+      };
+
       const mockGmailMessages = [
         {
           id: "msg-1",
           threadId: "thread-1",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
           sender: "Arthur Ribeiro <arthur@empresa.com>",
           senderName: "Arthur Ribeiro",
           subject: "Ajustes no manual PTN — Preciso do seu aval hoje",
@@ -256,6 +283,10 @@ export async function GET(req: NextRequest) {
         {
           id: "msg-2",
           threadId: "thread-2",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
           sender: "Thaís Mendes <thais@empresa.com>",
           senderName: "Thaís Mendes",
           subject: "Urgente: Assinatura do termo aditivo com fornecedor",
@@ -268,6 +299,10 @@ export async function GET(req: NextRequest) {
         {
           id: "msg-3",
           threadId: "thread-3",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
           sender: "Fornecedor ABC <contato@fornecedorabc.com.br>",
           senderName: "Fornecedor ABC",
           subject: "Previsão de entrega do lote #4890",
@@ -280,6 +315,10 @@ export async function GET(req: NextRequest) {
         {
           id: "msg-4",
           threadId: "thread-4",
+          connectedAccountId: mockPersonalAccount.id,
+          accountEmail: mockPersonalAccount.email,
+          accountLabel: mockPersonalAccount.label,
+          accountType: "PERSONAL",
           sender: "Enel Distribuição SP <fatura@eneldistribuicao.com.br>",
           senderName: "Enel São Paulo",
           subject: "Sua conta de energia elétrica digital chegou — Vencimento em 3 dias",
@@ -292,6 +331,10 @@ export async function GET(req: NextRequest) {
         {
           id: "msg-5",
           threadId: "thread-5",
+          connectedAccountId: mockPersonalAccount.id,
+          accountEmail: mockPersonalAccount.email,
+          accountLabel: mockPersonalAccount.label,
+          accountType: "PERSONAL",
           sender: "Sabesp <atendimento@sabesp.sp.gov.br>",
           senderName: "Sabesp",
           subject: "Conta de água e esgoto - Ref 09/2026 - R$ 112,40",
@@ -304,6 +347,10 @@ export async function GET(req: NextRequest) {
         {
           id: "msg-6",
           threadId: "thread-6",
+          connectedAccountId: mockPersonalAccount.id,
+          accountEmail: mockPersonalAccount.email,
+          accountLabel: mockPersonalAccount.label,
+          accountType: "PERSONAL",
           sender: "Condomínio Edifício Solar <administracao@condominiosolar.com.br>",
           senderName: "Administradora Solar",
           subject: "Taxa Condominial Mensal — Boleto e Chave PIX",
@@ -316,6 +363,10 @@ export async function GET(req: NextRequest) {
         {
           id: "msg-7",
           threadId: "thread-7",
+          connectedAccountId: mockWorkAccount.id,
+          accountEmail: mockWorkAccount.email,
+          accountLabel: mockWorkAccount.label,
+          accountType: "WORK",
           sender: "LinkedIn Updates <updates@linkedin.com>",
           senderName: "LinkedIn",
           subject: "Fábio, você apareceu em 42 buscas de perfil esta semana",
@@ -328,6 +379,10 @@ export async function GET(req: NextRequest) {
         {
           id: "msg-8",
           threadId: "thread-8",
+          connectedAccountId: mockPersonalAccount.id,
+          accountEmail: mockPersonalAccount.email,
+          accountLabel: mockPersonalAccount.label,
+          accountType: "PERSONAL",
           sender: "Medium Daily Digest <digest@medium.com>",
           senderName: "Medium",
           subject: "Top stories in Next.js, Engineering and Productivity",
@@ -339,38 +394,57 @@ export async function GET(req: NextRequest) {
         },
       ];
 
-      const visibleMessages = includeNoise
-        ? mockGmailMessages
-        : mockGmailMessages.filter((m) => m.dashboardCategory !== "NOISE");
+      let filteredMock = mockGmailMessages;
+      if (requestedAccountId && requestedAccountId !== "all") {
+        filteredMock = filteredMock.filter((m) => m.connectedAccountId === requestedAccountId);
+      }
+      if (!includeNoise) {
+        filteredMock = filteredMock.filter((m) => m.dashboardCategory !== "NOISE");
+      }
+
       return NextResponse.json({
-        connected: false,
+        connected: true,
         isSimulated: true,
-        messages: await attachTaskLinks(user.id, visibleMessages),
+        accounts: allAccounts.map(toSafeAccount),
+        messages: await attachTaskLinks(userId, filteredMock),
       });
     }
 
-    let token = integration.accessToken;
-    if (integration.expiresAt && integration.expiresAt.getTime() < Date.now() + 60_000) {
-      if (!integration.refreshToken) return NextResponse.json({ error: "Autorização do Gmail precisa ser renovada." }, { status: 401 });
-      token = await refreshGoogleToken(user.id, integration.refreshToken);
-    }
+    // Real API call across all targeted connected accounts
+    const allMessages: Array<any> = [];
 
-    const includeNoise = req.nextUrl?.searchParams.get("includeNoise") === "true";
-
-    try {
-      const messages = await fetchAndClassifyMessages(token, includeNoise);
-      return NextResponse.json({ connected: true, messages: await attachTaskLinks(user.id, messages as any[]) });
-    } catch (e: any) {
-      if (integration.refreshToken) {
-        token = await refreshGoogleToken(user.id, integration.refreshToken);
-        const messages = await fetchAndClassifyMessages(token, includeNoise);
-        return NextResponse.json({ connected: true, messages: await attachTaskLinks(user.id, messages as any[]) });
+    for (const account of targetAccounts) {
+      try {
+        const token = await getValidAccessToken(account);
+        const accountInfo = {
+          id: account.id,
+          email: account.email,
+          label: account.label ?? (account.accountType === "WORK" ? "Profissional" : "Pessoal"),
+          accountType: account.accountType,
+        };
+        const messages = await fetchAndClassifyMessages(token, accountInfo, includeNoise);
+        allMessages.push(...messages);
+      } catch (err) {
+        console.error(`Error loading Gmail for account ${account.email}:`, err);
       }
-      throw e;
     }
+
+    // Sort consolidated messages by date desc
+    allMessages.sort((a, b) => {
+      const dateA = a.internalDate ? Number(a.internalDate) : 0;
+      const dateB = b.internalDate ? Number(b.internalDate) : 0;
+      return dateB - dateA;
+    });
+
+    const messagesWithTasks = await attachTaskLinks(userId, allMessages);
+
+    return NextResponse.json({
+      connected: true,
+      accounts: allAccounts.map(toSafeAccount),
+      messages: messagesWithTasks,
+    });
   } catch (error) {
     console.error("Gmail GET failed:", error);
     return NextResponse.json({ error: "Não foi possível carregar o Gmail." }, { status: 503 });
   }
 }
-
