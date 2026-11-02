@@ -527,10 +527,14 @@ export default function Dashboard() {
       }
     }
 
-    void loadTasks();
-    void loadAccounts();
-    void loadCalendar("all");
-    void loadGmail("all");
+    void (async () => {
+      await Promise.allSettled([
+        loadTasks(),
+        loadAccounts(),
+        loadCalendar("all"),
+        loadGmail("all"),
+      ]);
+    })();
 
     async function loadBills() {
       try {

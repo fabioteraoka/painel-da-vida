@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import crypto from "node:crypto";
 import { auth } from "@/auth";
 import { prisma, isDemoMode } from "@/lib/prisma";
 import { upsertConnectedAccount, ConnectedAccountType } from "@/lib/connected-accounts";
@@ -46,6 +47,84 @@ function callbackUrl(request: Request, integration: GoogleIntegration) {
         : "/api/auth/callback/google";
 
   return new URL(path, request.url).toString();
+}
+
+function getOAuthSecret(): string {
+  const secret =
+    process.env.AUTH_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    process.env.ENCRYPTION_KEY ||
+    process.env.TOKEN_ENCRYPTION_KEY;
+
+  if (!secret) {
+    if (isDemoMode) return "painel-da-vida-oauth-demo-secret";
+    throw new Error("AUTH_SECRET ou ENCRYPTION_KEY obrigatória para assinar o fluxo OAuth.");
+  }
+  return secret;
+}
+
+function computeSessionUserHash(email: string): string {
+  return crypto.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 32);
+}
+
+function createSignedOAuthState(email: string, integration: GoogleIntegration): { state: string; nonce: string } {
+  const nonce = crypto.randomBytes(32).toString("hex"); // 256 bits de entropia
+  const sessionHash = computeSessionUserHash(email);
+  const issuedAt = Date.now();
+  const expiresAt = issuedAt + 10 * 60 * 1000; // 10 minutos de validade
+  const payloadStr = `${nonce}:${sessionHash}:${issuedAt}:${expiresAt}:${integration}`;
+  const secret = getOAuthSecret();
+  const sig = crypto.createHmac("sha256", secret).update(payloadStr).digest("hex");
+  const state = `${nonce}.${sessionHash}.${issuedAt}.${expiresAt}.${integration}.${sig}`;
+  return { state, nonce };
+}
+
+function verifySignedOAuthState(
+  stateParam: string | null | undefined,
+  expectedNonce: string | null | undefined,
+  userEmail: string,
+  integration: GoogleIntegration,
+): boolean {
+  if (!stateParam || !expectedNonce) return false;
+
+  const parts = stateParam.split(".");
+  if (parts.length !== 6) return false;
+
+  const [nonce, sessionHash, issuedAtStr, expiresAtStr, stateIntegration, sig] = parts;
+
+  // 1. Validação de Nonce imprevisível e uso único (deve coincidir com o cookie local)
+  if (nonce !== expectedNonce) return false;
+
+  // 2. Validação de Integração
+  if (stateIntegration !== integration) return false;
+
+  // 3. Validação de Vínculo com a Sessão Ativa
+  const currentSessionHash = computeSessionUserHash(userEmail);
+  if (sessionHash !== currentSessionHash) return false;
+
+  // 4. Validação de Expiração Temporal
+  const now = Date.now();
+  const issuedAt = Number(issuedAtStr);
+  const expiresAt = Number(expiresAtStr);
+  if (isNaN(issuedAt) || isNaN(expiresAt)) return false;
+  if (now > expiresAt || now < issuedAt - 60_000) return false; // Expirado ou timestamp no futuro
+
+  // 5. Validação de Assinatura Criptográfica HMAC com Timing-Safe Equal
+  try {
+    const payloadStr = `${nonce}:${sessionHash}:${issuedAtStr}:${expiresAtStr}:${stateIntegration}`;
+    const secret = getOAuthSecret();
+    const expectedSig = crypto.createHmac("sha256", secret).update(payloadStr).digest("hex");
+
+    const sigBuf = Buffer.from(sig, "hex");
+    const expBuf = Buffer.from(expectedSig, "hex");
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  return true;
 }
 
 export async function startGoogleIntegration(
@@ -101,8 +180,8 @@ export async function startGoogleIntegration(
     return NextResponse.redirect(target);
   }
 
-  const state = crypto.randomUUID();
-  const cookieStore = await cookies();
+  // Gera state criptograficamente assinado com nonce e vínculo à sessão
+  const { state, nonce } = createSignedOAuthState(session.user.email, integration);
   const { stateCookie, scope } = config[integration] ?? config.google;
 
   // Notice: prompt=select_account consent ensures user can choose any Google account
@@ -122,7 +201,8 @@ export async function startGoogleIntegration(
     `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
   );
 
-  response.cookies.set(stateCookie, state, {
+  // Armazena o nonce imprevisível em cookie seguro com expiração estrita de 10 min
+  response.cookies.set(stateCookie, nonce, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -159,16 +239,24 @@ export async function finishGoogleIntegration(
   const { stateCookie } = config[integration] ?? config.google;
 
   const cookieStore = await cookies();
-  const expectedState = cookieStore.get(stateCookie)?.value;
+  const expectedNonce = cookieStore.get(stateCookie)?.value;
   const cookieAccountType = cookieStore.get("google_oauth_account_type")?.value as
     | ConnectedAccountType
     | undefined;
 
-  if (error || !code || !state || !expectedState || state !== expectedState) {
+  // Validação estrita de CSRF: State assinado + Nonce imprevisível + Expiração + Vínculo de Sessão
+  const isStateValid = verifySignedOAuthState(state, expectedNonce, session.user.email, integration);
+
+  if (error || !code || !isStateValid) {
+    console.warn(`[OAuth] Falha na validação CSRF ou callback recusado para ${session.user.email} (erro=${error || "csrf_invalid"})`);
     const target = new URL("/", request.url);
     target.searchParams.set("integration", integration);
-    target.searchParams.set("error", error ?? "oauth_callback_failed");
-    return NextResponse.redirect(target);
+    target.searchParams.set("error", error ?? "oauth_csrf_validation_failed");
+    const response = NextResponse.redirect(target);
+    // Consumo de uso único: invalida cookies
+    response.cookies.set(stateCookie, "", { maxAge: 0, path: "/", httpOnly: true });
+    response.cookies.set("google_oauth_account_type", "", { maxAge: 0, path: "/", httpOnly: true });
+    return response;
   }
 
   const { clientId, clientSecret } = googleCredentials();

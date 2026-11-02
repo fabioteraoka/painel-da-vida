@@ -261,15 +261,15 @@ export async function upsertConnectedAccount(data: {
     },
   });
 
-  // Also sync legacy Integration for backwards compatibility
+  // Also sync legacy Integration for backwards compatibility (encrypted tokens at rest)
   try {
     for (const p of ["GMAIL", "GOOGLE_CALENDAR"] as const) {
       await prisma.integration.upsert({
         where: { userId_provider: { userId: data.userId, provider: p } },
         update: {
           status: "CONNECTED",
-          accessToken: data.accessToken,
-          refreshToken: finalRefreshToken,
+          accessToken: encryptToken(data.accessToken),
+          refreshToken: encryptToken(finalRefreshToken),
           expiresAt,
           externalUserId: data.externalUserId ?? null,
         },
@@ -277,8 +277,8 @@ export async function upsertConnectedAccount(data: {
           userId: data.userId,
           provider: p,
           status: "CONNECTED",
-          accessToken: data.accessToken,
-          refreshToken: finalRefreshToken,
+          accessToken: encryptToken(data.accessToken),
+          refreshToken: encryptToken(finalRefreshToken),
           expiresAt,
           externalUserId: data.externalUserId ?? null,
         },

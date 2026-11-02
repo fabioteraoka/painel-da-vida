@@ -2,10 +2,19 @@ import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; mockStore?: Map<string, Map<string, any>> };
 
-export const isDemoMode =
+const isProduction = process.env.NODE_ENV === "production";
+const isExplicitDemo =
   process.env.DEMO_MODE === "true" ||
-  process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
-  (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "");
+  process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+const hasNoDb = !process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "";
+
+/**
+ * CRITICAL SECURITY RULE:
+ * In production, demo mode is strictly disabled under all circumstances.
+ * Fictitious users, mock stores, or demo accounts cannot be activated in production.
+ */
+export const isDemoMode = !isProduction && (isExplicitDemo || hasNoDb);
+
 
 function createMockPrisma(): PrismaClient {
   console.info("[Painel da Vida] Operando com armazenamento local otimizado (Zero-Config)");
