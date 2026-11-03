@@ -8,12 +8,12 @@ const GOOGLE_CALENDAR_SCOPE =
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 const googleClientId =
-  process.env.AUTH_GOOGLE_ID ??
   process.env.GOOGLE_CLIENT_ID ??
+  process.env.AUTH_GOOGLE_ID ??
   (isDemoMode ? "demo-google-client-id" : "");
 const googleClientSecret =
-  process.env.AUTH_GOOGLE_SECRET ??
   process.env.GOOGLE_CLIENT_SECRET ??
+  process.env.AUTH_GOOGLE_SECRET ??
   (isDemoMode ? "demo-google-client-secret" : "");
 
 const hasGoogleCredentials = Boolean(googleClientId && googleClientSecret);

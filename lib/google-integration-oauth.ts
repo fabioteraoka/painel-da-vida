@@ -27,9 +27,9 @@ const config = {
 };
 
 function googleCredentials() {
-  const clientId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
+  const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.AUTH_GOOGLE_ID;
   const clientSecret =
-    process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
+    process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET;
 
   if (!clientId || !clientSecret) {
     throw new Error("Google OAuth credentials are not configured.");
@@ -79,6 +79,35 @@ function createSignedOAuthState(email: string, integration: GoogleIntegration): 
   return { state, nonce };
 }
 
+const globalForOAuth = globalThis as unknown as {
+  consumedOAuthNonces?: Map<string, number>;
+};
+
+const consumedNonces = (globalForOAuth.consumedOAuthNonces ??= new Map<string, number>());
+
+function pruneExpiredNonces() {
+  const now = Date.now();
+  for (const [nonce, expiresAt] of consumedNonces.entries()) {
+    if (now > expiresAt) {
+      consumedNonces.delete(nonce);
+    }
+  }
+}
+
+/**
+ * Consumo atômico e de uso único no servidor.
+ * Retorna true se o nonce era inédito e foi registrado como consumido.
+ * Retorna false se o nonce já tiver sido consumido (prevenção contra replay e requisições concorrentes).
+ */
+function consumeNonceServerSide(nonce: string, expiresAt: number): boolean {
+  pruneExpiredNonces();
+  if (consumedNonces.has(nonce)) {
+    return false; // Replay detectado!
+  }
+  consumedNonces.set(nonce, expiresAt);
+  return true;
+}
+
 function verifySignedOAuthState(
   stateParam: string | null | undefined,
   expectedNonce: string | null | undefined,
@@ -92,7 +121,7 @@ function verifySignedOAuthState(
 
   const [nonce, sessionHash, issuedAtStr, expiresAtStr, stateIntegration, sig] = parts;
 
-  // 1. Validação de Nonce imprevisível e uso único (deve coincidir com o cookie local)
+  // 1. Validação de Nonce imprevisível (deve coincidir com o cookie local da sessão)
   if (nonce !== expectedNonce) return false;
 
   // 2. Validação de Integração
@@ -121,6 +150,12 @@ function verifySignedOAuthState(
       return false;
     }
   } catch {
+    return false;
+  }
+
+  // 6. Consumo único obrigatório no servidor (proteção ativa contra replay / uso concorrente)
+  if (!consumeNonceServerSide(nonce, expiresAt)) {
+    console.warn(`[OAuth] Tentativa de reutilização (replay) ou concorrência detectada para nonce: ${nonce.slice(0, 8)}...`);
     return false;
   }
 

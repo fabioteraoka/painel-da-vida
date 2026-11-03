@@ -308,8 +308,8 @@ export async function refreshAccountToken(account: ConnectedAccountData): Promis
   }
 
   if (account.provider === "GOOGLE") {
-    const clientId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
+    const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.AUTH_GOOGLE_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET;
 
     if (!clientId || !clientSecret) {
       if (isDemoMode) {
