@@ -518,9 +518,26 @@ function createMockPrisma(): PrismaClient {
       return args?.include ? populateRelations(model, found, args.include) : found;
     },
     create: async (args?: any) => {
+      const store = getStore(model);
+      const nonceVal = args?.data?.nonce;
+      if (nonceVal) {
+        if (store.has(nonceVal)) {
+          const err: any = new Error("Unique constraint failed on the fields: (`nonce`)");
+          err.code = "P2002";
+          throw err;
+        }
+        const record = { nonce: nonceVal, createdAt: new Date(), ...(args?.data ?? {}) };
+        store.set(nonceVal, record);
+        return record;
+      }
       const id = args?.data?.id ?? `mock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      if (args?.data?.id && store.has(args.data.id)) {
+        const err: any = new Error("Unique constraint failed on the fields: (`id`)");
+        err.code = "P2002";
+        throw err;
+      }
       const record = { id, createdAt: new Date(), updatedAt: new Date(), ...(args?.data ?? {}) };
-      getStore(model).set(id, record);
+      store.set(id, record);
       return record;
     },
     createMany: async (args?: any) => {

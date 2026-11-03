@@ -26,13 +26,22 @@ const config = {
   },
 };
 
-function googleCredentials() {
-  const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.AUTH_GOOGLE_ID;
-  const clientSecret =
-    process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET;
+export function getGoogleOAuthCredentials(): { clientId: string; clientSecret: string } {
+  // Prioriza estritamente GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET
+  // com fallback retrocompatível documentado para AUTH_GOOGLE_ID e AUTH_GOOGLE_SECRET
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET;
 
   if (!clientId || !clientSecret) {
-    throw new Error("Google OAuth credentials are not configured.");
+    if (isDemoMode) {
+      return {
+        clientId: clientId || "demo-google-client-id",
+        clientSecret: clientSecret || "demo-google-client-secret",
+      };
+    }
+    throw new Error(
+      "Credenciais Google OAuth não configuradas. Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET (com fallback legado para AUTH_GOOGLE_*).",
+    );
   }
 
   return { clientId, clientSecret };
@@ -67,7 +76,10 @@ function computeSessionUserHash(email: string): string {
   return crypto.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 32);
 }
 
-function createSignedOAuthState(email: string, integration: GoogleIntegration): { state: string; nonce: string } {
+export function createSignedOAuthState(
+  email: string,
+  integration: GoogleIntegration,
+): { state: string; nonce: string } {
   const nonce = crypto.randomBytes(32).toString("hex"); // 256 bits de entropia
   const sessionHash = computeSessionUserHash(email);
   const issuedAt = Date.now();
@@ -80,40 +92,80 @@ function createSignedOAuthState(email: string, integration: GoogleIntegration): 
 }
 
 const globalForOAuth = globalThis as unknown as {
-  consumedOAuthNonces?: Map<string, number>;
+  consumedOAuthNoncesFallback?: Map<string, number>;
 };
 
-const consumedNonces = (globalForOAuth.consumedOAuthNonces ??= new Map<string, number>());
+const consumedNoncesFallback = (globalForOAuth.consumedOAuthNoncesFallback ??= new Map<string, number>());
 
-function pruneExpiredNonces() {
+function consumeNonceFallbackInMemory(nonce: string, expiresAt: number): boolean {
   const now = Date.now();
-  for (const [nonce, expiresAt] of consumedNonces.entries()) {
-    if (now > expiresAt) {
-      consumedNonces.delete(nonce);
-    }
+  for (const [n, exp] of consumedNoncesFallback.entries()) {
+    if (now > exp) consumedNoncesFallback.delete(n);
   }
-}
-
-/**
- * Consumo atômico e de uso único no servidor.
- * Retorna true se o nonce era inédito e foi registrado como consumido.
- * Retorna false se o nonce já tiver sido consumido (prevenção contra replay e requisições concorrentes).
- */
-function consumeNonceServerSide(nonce: string, expiresAt: number): boolean {
-  pruneExpiredNonces();
-  if (consumedNonces.has(nonce)) {
-    return false; // Replay detectado!
+  if (consumedNoncesFallback.has(nonce)) {
+    return false;
   }
-  consumedNonces.set(nonce, expiresAt);
+  consumedNoncesFallback.set(nonce, expiresAt);
   return true;
 }
 
-function verifySignedOAuthState(
+/**
+ * Consumo atômico e de uso único no servidor via PostgreSQL (OAuthNonce).
+ * Garante em instâncias serverless independentes (Vercel):
+ * - Operação atômica via INSERT (PRIMARY KEY constraint).
+ * - Callbacks concorrentes ou tentativas repetidas (replay) falham imediatamente (P2002).
+ * - Limpeza periódica controlada de registros expirados.
+ *
+ * Retorna true se o nonce era inédito e foi persistido com sucesso.
+ * Retorna false se o nonce já foi consumido ou falhar na verificação.
+ */
+export async function consumeNonceServerSide(nonce: string, expiresAt: number): Promise<boolean> {
+  const expiresDate = new Date(expiresAt);
+
+  // 1. Limpeza assíncrona não-bloqueante de nonces já expirados no banco
+  try {
+    prisma.oAuthNonce
+      .deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      })
+      .catch(() => {});
+  } catch {
+    // Pruning failure is non-fatal
+  }
+
+  // 2. Inserção atômica no PostgreSQL com chave primária (PRIMARY KEY constraint)
+  try {
+    await prisma.oAuthNonce.create({
+      data: {
+        nonce,
+        expiresAt: expiresDate,
+      },
+    });
+    return true;
+  } catch (err: any) {
+    // Prisma P2002 indica violação de unicidade: replay ou concorrência bloqueados atomicamente!
+    if (err?.code === "P2002" || err?.message?.includes("Unique constraint")) {
+      console.warn(`[OAuth] Tentativa de reutilização (replay) ou concorrência detectada no PostgreSQL para nonce: ${nonce.slice(0, 8)}...`);
+      return false;
+    }
+
+    // Se o banco estiver indisponível no ambiente (ex: modo demo offline ou testes sem DB),
+    // utiliza o controle em memória de contingência
+    if (isDemoMode || err?.message?.includes("connect") || err?.code === "P1001") {
+      return consumeNonceFallbackInMemory(nonce, expiresAt);
+    }
+
+    console.error("[OAuth] Erro inesperado ao persistir nonce:", err);
+    return false;
+  }
+}
+
+export async function verifySignedOAuthState(
   stateParam: string | null | undefined,
   expectedNonce: string | null | undefined,
   userEmail: string,
   integration: GoogleIntegration,
-): boolean {
+): Promise<boolean> {
   if (!stateParam || !expectedNonce) return false;
 
   const parts = stateParam.split(".");
@@ -153,8 +205,9 @@ function verifySignedOAuthState(
     return false;
   }
 
-  // 6. Consumo único obrigatório no servidor (proteção ativa contra replay / uso concorrente)
-  if (!consumeNonceServerSide(nonce, expiresAt)) {
+  // 6. Consumo único obrigatório no servidor (proteção ativa contra replay / uso concorrente via PostgreSQL)
+  const consumed = await consumeNonceServerSide(nonce, expiresAt);
+  if (!consumed) {
     console.warn(`[OAuth] Tentativa de reutilização (replay) ou concorrência detectada para nonce: ${nonce.slice(0, 8)}...`);
     return false;
   }
@@ -171,14 +224,22 @@ export async function startGoogleIntegration(
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const clientId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
-  const clientSecret =
-    process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
-
   const reqUrl = new URL(request.url);
   const accountTypeParam = reqUrl.searchParams.get("type") as ConnectedAccountType | null;
 
-  if (!clientId || !clientSecret) {
+  let credentials: { clientId: string; clientSecret: string } | null = null;
+  try {
+    credentials = getGoogleOAuthCredentials();
+  } catch (err) {
+    if (!isDemoMode) throw err;
+  }
+
+  const hasConfiguredCredentials = Boolean(
+    (process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID) &&
+      (process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET),
+  );
+
+  if (!hasConfiguredCredentials) {
     if (isDemoMode) {
       // In demo mode, simulate adding/connecting account
       const demoEmail = reqUrl.searchParams.get("email") || "fabio@empresa.com.br";
@@ -214,6 +275,8 @@ export async function startGoogleIntegration(
     target.searchParams.set("connected", "simulated");
     return NextResponse.redirect(target);
   }
+
+  const { clientId } = credentials!;
 
   // Gera state criptograficamente assinado com nonce e vínculo à sessão
   const { state, nonce } = createSignedOAuthState(session.user.email, integration);
@@ -279,8 +342,8 @@ export async function finishGoogleIntegration(
     | ConnectedAccountType
     | undefined;
 
-  // Validação estrita de CSRF: State assinado + Nonce imprevisível + Expiração + Vínculo de Sessão
-  const isStateValid = verifySignedOAuthState(state, expectedNonce, session.user.email, integration);
+  // Validação estrita de CSRF: State assinado + Nonce imprevisível + Expiração + Vínculo de Sessão + Consumo Único via PostgreSQL
+  const isStateValid = await verifySignedOAuthState(state, expectedNonce, session.user.email, integration);
 
   if (error || !code || !isStateValid) {
     console.warn(`[OAuth] Falha na validação CSRF ou callback recusado para ${session.user.email} (erro=${error || "csrf_invalid"})`);
@@ -294,7 +357,7 @@ export async function finishGoogleIntegration(
     return response;
   }
 
-  const { clientId, clientSecret } = googleCredentials();
+  const { clientId, clientSecret } = getGoogleOAuthCredentials();
   const redirectUri = callbackUrl(request, integration);
 
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {

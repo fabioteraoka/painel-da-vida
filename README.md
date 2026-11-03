@@ -123,10 +123,10 @@ model ConnectedAccount {
 }
 ```
 
-### Por que esta arquitetura suporta Microsoft 365 nativamente?
-1. **Unicidade Composta:** A restrição `@@unique([userId, provider, email])` permite que o mesmo usuário tenha uma conta `provider = GOOGLE` e outra `provider = MICROSOFT` sem qualquer colisão de chaves.
+### Preparação Arquitetural para Microsoft 365 (Etapa 2)
+1. **Unicidade Composta:** A restrição `@@unique([userId, provider, email])` e os enums `AccountProvider` (`GOOGLE` e `MICROSOFT`) já estão declarados no schema Prisma, permitindo contas pessoais Google e corporativas Microsoft sem colisão.
 2. **Preservação de Tokens:** O serviço `upsertConnectedAccount` preserva o `refreshToken` quando um provedor não devolve novo token offline em reautorizações subsequentes.
-3. **Renovação Modular:** A função `refreshAccountToken` roteia para o endpoint do Google (`oauth2.googleapis.com/token`) ou da Microsoft (`login.microsoftonline.com/common/oauth2/v2.0/token`) conforme o enum `provider`.
+3. **Escopo:** A integração funcional com Microsoft Entra ID e Microsoft Graph API (Outlook e Calendar) será implementada na **Etapa 2**, mantendo o foco desta Etapa 1 na estabilização e segurança.
 
 ---
 
@@ -234,43 +234,45 @@ export const isDemoMode = !isProduction && (isExplicitDemo || hasNoDb);
 Em produção, `isDemoMode` é **estritamente `false`**. Caso o banco fique temporariamente inacessível, o sistema responde com erro seguro 503 e **nunca** concede acesso simulado anônimo.
 
 ### 2. Criptografia em Repouso (AES-256-GCM)
-- Chave derivada exclusivamente de `ENCRYPTION_KEY` com SHA-256.
-- A chave exige entropia mínima comprovada de pelo menos 32 caracteres.
-- Formato do envelope: `enc:v1:<iv_12bytes_hex>:<authTag_16bytes_hex>:<ciphertext_hex>`.
-- Rejeição estrita de strings iniciadas por `enc:` que não atendam à expressão regular de validação.
-- Nenhum token em texto puro é aceito ou armazenado.
+- **Chave de Criptografia Exclusiva:** Derivada exclusivamente de `ENCRYPTION_KEY` via SHA-256 (chave de 256 bits). Não utiliza `AUTH_SECRET` como substituto para persistência.
+- **Requisito de Tamanho e Entropia:** A chave exige tamanho mínimo de **32 caracteres**, recomendando-se 32 bytes de alta entropia gerados criptograficamente via `openssl rand -base64 32`.
+- **Formato do Envelope:** Padrão versionado `enc:v1:<iv_12bytes_hex>:<authTag_16bytes_hex>:<ciphertext_hex>`.
+- **Validação Estrita de Envelope:** Expressão regular estrita que rejeita strings adulteradas ou malformadas iniciadas por `enc:`.
+- **Modo de Transição e Retrocompatibilidade:** A função `decryptToken` permite temporariamente a leitura de tokens legados em texto puro enquanto a migração não for executada, emitindo advertência operacional (`[Crypto] AVISO OPERACIONAL`) no log para não interromper a aplicação até a execução de `scripts/migrate-legacy-tokens.ts`. Na escrita (`encryptToken`), todo token novo ou atualizado é obrigatoriamente criptografado.
 
 ### 3. Proteção CSRF no OAuth Google
 O parâmetro `state` gerado em `/api/integrations/google/connect` cumpre 6 requisitos criptográficos:
 1. **Nonce Imprevisível:** 32 bytes de alta entropia gerados com `crypto.randomBytes(32)` (256 bits).
-2. **Vínculo à Sessão:** Hash SHA-256 do e-mail do usuário autenticado incluído no payload.
-3. **Expiração Temporal:** Validade máxima de 10 minutos verificada no callback.
-4. **Assinatura HMAC:** Assinado com chave secreta do servidor e verificado com `crypto.timingSafeEqual`.
-5. **Consumo Único no Servidor:** Registro atômico de nonces consumidos no servidor, bloqueando ataques de repetição (replay) e chamadas concorrentes.
-6. **Consumo do Cookie:** Invalidação imediata do cookie no navegador após a primeira leitura.
+2. **Vínculo à Sessão:** Hash SHA-256 do e-mail do usuário autenticado no payload, impedindo cross-account hijacking.
+3. **Expiração Temporal:** Validade máxima estrita de 10 minutos verificada no callback.
+4. **Assinatura HMAC:** Assinado com chave do servidor e verificado com comparação temporalmente constante (`crypto.timingSafeEqual`).
+5. **Consumo Único Persistente no PostgreSQL:** Tabela `OAuthNonce` com chave primária (`PRIMARY KEY ("nonce")`). Garante que em ambientes serverless multi-instância (ex: Vercel) qualquer tentativa de repetição (replay) ou concorrência seja atomicamente rejeitada com erro de unicidade (`P2002`). Registros expirados são purgados de forma controlada (TTL).
+6. **Consumo do Cookie:** Invalidação imediata do cookie de nonce no navegador após a leitura.
 
 ---
 
 ## 10. Inventário das Variáveis de Ambiente
 
+Todas as variáveis estão harmonizadas entre `.env.example`, código e documentação:
+
 | Variável | Obrigatoriedade | Onde é Utilizada | Função |
 | :--- | :---: | :--- | :--- |
 | `DATABASE_URL` | **Obrigatória** | `schema.prisma`, `lib/prisma.ts` | Conexão PostgreSQL (com pooling). Automática via Vercel Neon. |
-| `DATABASE_URL_UNPOOLED` | **Obrigatória** | `schema.prisma`, `deploy-migrations.mjs` | Conexão direta PostgreSQL (sem pooling) para migrations. |
-| `ENCRYPTION_KEY` | **Obrigatória** | `lib/crypto.ts`, scripts | Chave de 32+ caracteres para criptografia AES-256-GCM dos tokens. |
-| `AUTH_SECRET` | **Obrigatória** | `auth.ts`, `google-integration-oauth.ts` | Assinatura da sessão JWT (NextAuth) e assinatura HMAC do OAuth state. |
-| `GOOGLE_CLIENT_ID` | **Obrigatória** | `auth.ts`, `lib/google-integration-oauth.ts` | Client ID do Google OAuth 2.0 (Google Cloud Console). |
-| `GOOGLE_CLIENT_SECRET` | **Obrigatória** | `auth.ts`, `lib/google-integration-oauth.ts` | Client Secret do Google OAuth 2.0. |
-| `CRON_SECRET` | **Obrigatória** | `app/api/cron/bills`, `app/api/cron/prices` | Segredo para validação do header `Authorization: Bearer <CRON_SECRET>`. |
-| `AI_GATEWAY_API_KEY` | Opcional | `lib/ai-gateway.ts` | Chave do Vercel AI Gateway (se ausente, usa heurísticas/regex). |
-| `AI_MODEL` | Opcional | `lib/ai-gateway.ts` | Identificador do modelo de IA (padrão: `openai/gpt-4o-mini`). |
-| `DEMO_MODE` | Opcional | `lib/prisma.ts` | `true` apenas para desenvolvimento local offline. Bloqueado em produção. |
-| `NEXT_PUBLIC_DEMO_MODE`| Opcional | `components/dashboard/dashboard.tsx` | Espelhamento no cliente para exibição de fixtures em dev. |
+| `DATABASE_URL_UNPOOLED` | **Obrigatória** | `schema.prisma`, `deploy-migrations.mjs` | Conexão direta PostgreSQL (sem pooling) para migrations Prisma. |
+| `ENCRYPTION_KEY` | **Obrigatória** | `lib/crypto.ts`, scripts | Chave mestra de 32+ caracteres para criptografia AES-256-GCM dos tokens OAuth em repouso. *(Alias retrocompatível: `TOKEN_ENCRYPTION_KEY`)*. |
+| `AUTH_SECRET` | **Obrigatória** | `auth.ts`, `lib/google-integration-oauth.ts` | Assinatura dos cookies de sessão JWT (NextAuth) e assinatura HMAC do OAuth state. *(Alias retrocompatível: `NEXTAUTH_SECRET`)*. |
+| `GOOGLE_CLIENT_ID` | **Obrigatória** | `auth.ts`, `lib/google-integration-oauth.ts` | Client ID do Google OAuth 2.0 (Google Cloud Console). *(Alias retrocompatível: `AUTH_GOOGLE_ID`)*. |
+| `GOOGLE_CLIENT_SECRET` | **Obrigatória** | `auth.ts`, `lib/google-integration-oauth.ts` | Client Secret do Google OAuth 2.0. *(Alias retrocompatível: `AUTH_GOOGLE_SECRET`)*. |
+| `CRON_SECRET` | **Obrigatória** | `app/api/cron/bills`, `app/api/cron/prices` | Segredo para autorização do header `Authorization: Bearer <CRON_SECRET>` nas rotas agendadas da Vercel. |
+| `AI_GATEWAY_API_KEY` | Opcional | `lib/ai-gateway.ts` | Chave de acesso ao Vercel AI Gateway (se ausente, opera com heurísticas determinísticas/regex). |
+| `AI_MODEL` | Opcional | `lib/ai-gateway.ts` | Modelo de IA para classificação e parsing (padrão: `openai/gpt-4o-mini`). |
+| `DEMO_MODE` | Opcional | `lib/prisma.ts` | `true` apenas para desenvolvimento local offline com fixtures. Estritamente bloqueado em produção. |
+| `NEXT_PUBLIC_DEMO_MODE`| Opcional | `components/dashboard/dashboard.tsx` | Espelhamento no cliente para visualização em modo demonstração local. |
 
 ### Configuração Recomendada por Ambiente:
-- **Production (Vercel):** `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `ENCRYPTION_KEY`, `AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRON_SECRET`.
+- **Production (Vercel):** `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `ENCRYPTION_KEY` (gerada com `openssl rand -base64 32`), `AUTH_SECRET` (gerada com `openssl rand -base64 32`), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRON_SECRET`.
 - **Preview (Vercel):** Mesmas variáveis de Production (apontando preferencialmente para branch do Neon).
-- **Development (Local):** Arquivo `.env` local com as chaves de teste ou `DEMO_MODE="true"` para desenvolvimento desconectado.
+- **Development (Local):** Arquivo `.env` local com as variáveis configuradas ou `DEMO_MODE="true"` para desenvolvimento desconectado.
 
 ---
 

@@ -179,6 +179,24 @@ async function main() {
         action: async () => {
           // Cria registro em ConnectedAccount com status ERROR para não perder o registro,
           // mas sem poluir a conta do usuário com suposição incorreta
+          const existingAcc = await (prisma as any).connectedAccount.findUnique({
+            where: {
+              userId_provider_email: {
+                userId: user.id,
+                provider: "GOOGLE",
+                email: placeholderEmail,
+              },
+            },
+          });
+
+          const finalAccessToken = hasAccess
+            ? (needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken)
+            : (existingAcc?.accessToken ?? null);
+
+          const finalRefreshToken = hasRefresh
+            ? (needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken)
+            : (existingAcc?.refreshToken ?? null);
+
           await (prisma as any).connectedAccount.upsert({
             where: {
               userId_provider_email: {
@@ -190,8 +208,8 @@ async function main() {
             update: {
               status: "ERROR",
               errorMessage: "Identidade Google não confirmada durante a migração. Reconecte esta conta no Painel da Vida.",
-              accessToken: needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken,
-              refreshToken: needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken,
+              accessToken: finalAccessToken,
+              refreshToken: finalRefreshToken,
             },
             create: {
               userId: user.id,
@@ -202,8 +220,8 @@ async function main() {
               accountType: "PERSONAL",
               status: "ERROR",
               errorMessage: "Identidade Google não confirmada durante a migração. Reconecte esta conta no Painel da Vida.",
-              accessToken: needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken,
-              refreshToken: needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken,
+              accessToken: finalAccessToken,
+              refreshToken: finalRefreshToken,
             },
           });
 
@@ -212,8 +230,8 @@ async function main() {
             await prisma.integration.update({
               where: { id: leg.id },
               data: {
-                accessToken: needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken,
-                refreshToken: needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken,
+                ...(needsAccessEncrypt ? { accessToken: encryptToken(leg.accessToken) } : {}),
+                ...(needsRefreshEncrypt ? { refreshToken: encryptToken(leg.refreshToken) } : {}),
               },
             });
           }
@@ -233,6 +251,25 @@ async function main() {
         status: "REQUIRES_ENCRYPTION",
         reason: `Identidade Google confirmada como '${confirmedEmail}'. Migrando tokens com criptografia.`,
         action: async () => {
+          // Preserva estritamente tokens existentes: nunca substitui um token existente por null
+          const existingAcc = await (prisma as any).connectedAccount.findUnique({
+            where: {
+              userId_provider_email: {
+                userId: user.id,
+                provider: "GOOGLE",
+                email: confirmedEmail,
+              },
+            },
+          });
+
+          const finalAccessToken = hasAccess
+            ? (needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken)
+            : (existingAcc?.accessToken ?? null);
+
+          const finalRefreshToken = hasRefresh
+            ? (needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken)
+            : (existingAcc?.refreshToken ?? null);
+
           await (prisma as any).connectedAccount.upsert({
             where: {
               userId_provider_email: {
@@ -243,10 +280,10 @@ async function main() {
             },
             update: {
               status: "CONNECTED",
-              externalUserId,
-              accessToken: needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken,
-              refreshToken: needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken,
-              expiresAt: leg.expiresAt,
+              externalUserId: externalUserId ?? existingAcc?.externalUserId ?? null,
+              accessToken: finalAccessToken,
+              refreshToken: finalRefreshToken,
+              expiresAt: leg.expiresAt ?? existingAcc?.expiresAt ?? null,
             },
             create: {
               userId: user.id,
@@ -257,19 +294,19 @@ async function main() {
               label: confirmedEmail.endsWith("@gmail.com") ? "Google — pessoal" : "Google — profissional",
               accountType: confirmedEmail.endsWith("@gmail.com") ? "PERSONAL" : "WORK",
               status: "CONNECTED",
-              accessToken: needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken,
-              refreshToken: needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken,
+              accessToken: finalAccessToken,
+              refreshToken: finalRefreshToken,
               expiresAt: leg.expiresAt,
             },
           });
 
-          // Criptografa também na tabela legada
+          // Criptografa também na tabela legada in-place
           if (needsAccessEncrypt || needsRefreshEncrypt) {
             await prisma.integration.update({
               where: { id: leg.id },
               data: {
-                accessToken: needsAccessEncrypt ? encryptToken(leg.accessToken) : leg.accessToken,
-                refreshToken: needsRefreshEncrypt ? encryptToken(leg.refreshToken) : leg.refreshToken,
+                ...(needsAccessEncrypt ? { accessToken: encryptToken(leg.accessToken) } : {}),
+                ...(needsRefreshEncrypt ? { refreshToken: encryptToken(leg.refreshToken) } : {}),
               },
             });
           }

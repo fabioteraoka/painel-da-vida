@@ -179,6 +179,7 @@ model ConnectedAccount {
   status         ConnectionStatus     @default(CONNECTED)
   scopes         String?
   lastSyncAt     DateTime?
+  errorMessage   String?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -189,6 +190,14 @@ model ConnectedAccount {
   @@unique([userId, provider, email])
   @@index([userId, provider])
   @@index([userId, status])
+}
+
+model OAuthNonce {
+  nonce     String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 enum AccountProvider {
