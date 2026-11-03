@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   X,
   Plus,
@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
 } from "lucide-react";
 
 export type ConnectedAccountApi = {
@@ -61,6 +60,17 @@ export function ConnectedAccountsModal({
   const [demoLabel, setDemoLabel] = useState("Google — profissional");
   const [demoType, setDemoType] = useState<"PERSONAL" | "WORK">("WORK");
   const [creatingDemo, setCreatingDemo] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -151,25 +161,33 @@ export function ConnectedAccountsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5 my-8">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="connected-accounts-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto"
+    >
+      <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5 my-8 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-[#2e3f37]">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-slate-900">Contas Conectadas</h3>
-              <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+              <h3 id="connected-accounts-title" className="text-lg font-bold text-slate-900 dark:text-[#e6ede9]">
+                Contas Conectadas
+              </h3>
+              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-[#17382d] dark:text-[#67d9ae]">
                 Multi-contas Google
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1 dark:text-[#95a89f]">
               Conecte sua conta pessoal e sua conta profissional (Google Workspace) para consolidar e-mails e agenda.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+            aria-label="Fechar modal de contas conectadas"
+            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition dark:text-slate-400 dark:hover:bg-[#1e2b26] dark:hover:text-slate-200"
           >
             <X size={20} />
           </button>
@@ -178,17 +196,18 @@ export function ConnectedAccountsModal({
         {/* Status Message */}
         {statusMessage && (
           <div
+            role="status"
             className={`rounded-xl p-3 text-xs flex items-center justify-between ${
               statusMessage.type === "success"
-                ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                : "bg-red-50 text-red-800 border border-red-200"
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#17382d] dark:text-[#67d9ae] dark:border-[#264f40]"
+                : "bg-red-50 text-red-800 border border-red-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50"
             }`}
           >
             <div className="flex items-center gap-2">
               {statusMessage.type === "success" ? (
-                <CheckCircle2 size={16} className="text-emerald-600" />
+                <CheckCircle2 size={16} className="text-emerald-600 dark:text-[#00b37e]" />
               ) : (
-                <AlertCircle size={16} className="text-red-600" />
+                <AlertCircle size={16} className="text-red-600 dark:text-rose-400" />
               )}
               <span>{statusMessage.text}</span>
             </div>
@@ -205,16 +224,16 @@ export function ConnectedAccountsModal({
         {/* Accounts List */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-[#95a89f]">
               Contas Ativas ({accounts.length})
             </h4>
-            <span className="text-[11px] text-slate-400">Google Calendar &amp; Gmail</span>
+            <span className="text-[11px] text-slate-400 dark:text-[#95a89f]">Google Calendar &amp; Gmail</span>
           </div>
 
           {accounts.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500 space-y-2">
+            <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500 space-y-2 dark:border-[#2e3f37] dark:text-[#95a89f]">
               <p>Nenhuma conta externa conectada no momento.</p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-400 dark:text-[#95a89f]/80">
                 Clique abaixo para conectar sua primeira conta Google pessoal ou profissional.
               </p>
             </div>
@@ -227,30 +246,30 @@ export function ConnectedAccountsModal({
                 return (
                   <div
                     key={acc.id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 transition hover:bg-slate-50"
+                    className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 transition hover:bg-slate-50 dark:border-[#2e3f37] dark:bg-[#1e2b26]/60 dark:hover:bg-[#1e2b26]"
                   >
                     {isEditing ? (
                       <div className="space-y-3">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1 dark:text-slate-300">
                               Etiqueta da Conta:
                             </label>
                             <input
                               value={editLabel}
                               onChange={(e) => setEditLabel(e.target.value)}
                               placeholder="Ex.: Google — Pessoal"
-                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1 dark:text-slate-300">
                               Tipo da Conta:
                             </label>
                             <select
                               value={editType}
                               onChange={(e) => setEditType(e.target.value as any)}
-                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
                             >
                               <option value="PERSONAL">Pessoal</option>
                               <option value="WORK">Profissional / Empresa</option>
@@ -262,7 +281,7 @@ export function ConnectedAccountsModal({
                           <button
                             type="button"
                             onClick={() => setEditingId(null)}
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:bg-slate-100"
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-slate-300 dark:hover:bg-[#263730]"
                           >
                             Cancelar
                           </button>
@@ -270,7 +289,7 @@ export function ConnectedAccountsModal({
                             type="button"
                             disabled={savingEdit}
                             onClick={() => void handleSaveEdit(acc.id)}
-                            className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                            className="inline-flex items-center gap-1 rounded-xl bg-[#00875f] px-3.5 py-1 text-xs font-semibold text-white hover:bg-[#015f43] dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d] disabled:opacity-50"
                           >
                             <Check size={14} /> {savingEdit ? "Salvando..." : "Salvar"}
                           </button>
@@ -279,32 +298,32 @@ export function ConnectedAccountsModal({
                     ) : (
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-start gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-700 shadow-2xs">
-                            {isWork ? <Building2 size={20} className="text-purple-600" /> : <User size={20} className="text-blue-600" />}
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-700 shadow-2xs dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-slate-200">
+                            {isWork ? <Building2 size={20} className="text-purple-600 dark:text-purple-400" /> : <User size={20} className="text-blue-600 dark:text-blue-400" />}
                           </div>
 
                           <div>
                             <div className="flex items-center gap-2">
-                              <h5 className="text-sm font-bold text-slate-900">
+                              <h5 className="text-sm font-bold text-slate-900 dark:text-[#e6ede9]">
                                 {acc.label || (isWork ? "Google — profissional" : "Google — pessoal")}
                               </h5>
                               <span
                                 className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
                                   isWork
-                                    ? "bg-purple-100 text-purple-800"
-                                    : "bg-blue-100 text-blue-800"
+                                    ? "bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 dark:border dark:border-purple-800/40"
+                                    : "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 dark:border dark:border-blue-800/40"
                                 }`}
                               >
                                 {isWork ? "Profissional" : "Pessoal"}
                               </span>
                             </div>
 
-                            <p className="text-xs text-slate-600 font-mono mt-0.5">{acc.email}</p>
+                            <p className="text-xs text-slate-600 font-mono mt-0.5 dark:text-[#95a89f]">{acc.email}</p>
 
-                            <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                            <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-400 dark:text-[#95a89f]">
                               <span className="flex items-center gap-1">
                                 <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
-                                <strong className="text-emerald-700 font-medium">Conectada</strong>
+                                <strong className="text-emerald-700 font-medium dark:text-[#67d9ae]">Conectada</strong>
                               </span>
                               {acc.lastSyncAt && (
                                 <span>
@@ -324,8 +343,9 @@ export function ConnectedAccountsModal({
                           <button
                             type="button"
                             title="Editar identificação"
+                            aria-label={`Editar identificação de ${acc.email}`}
                             onClick={() => void handleStartEdit(acc)}
-                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-slate-300 dark:hover:bg-[#263730] dark:hover:text-white"
                           >
                             <Edit2 size={14} />
                           </button>
@@ -333,9 +353,10 @@ export function ConnectedAccountsModal({
                           <button
                             type="button"
                             title="Sincronizar e renovar agora"
+                            aria-label={`Sincronizar conta ${acc.email}`}
                             disabled={syncingId === acc.id}
                             onClick={() => void handleSync(acc.id)}
-                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition disabled:opacity-50"
+                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition disabled:opacity-50 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-slate-300 dark:hover:bg-[#263730] dark:hover:text-white"
                           >
                             <RefreshCw size={14} className={syncingId === acc.id ? "animate-spin" : ""} />
                           </button>
@@ -343,9 +364,10 @@ export function ConnectedAccountsModal({
                           <button
                             type="button"
                             title="Desconectar esta conta"
+                            aria-label={`Desconectar conta ${acc.email}`}
                             disabled={disconnectingId === acc.id}
                             onClick={() => void handleDisconnect(acc)}
-                            className="rounded-lg border border-rose-200 bg-white p-2 text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
+                            className="rounded-lg border border-rose-200 bg-white p-2 text-rose-600 hover:bg-rose-50 transition disabled:opacity-50 dark:border-rose-900/50 dark:bg-[#17211d] dark:text-rose-400 dark:hover:bg-rose-950/40"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -360,11 +382,11 @@ export function ConnectedAccountsModal({
         </div>
 
         {/* Add Account Actions */}
-        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 space-y-3 dark:border-[#2e3f37] dark:bg-[#1e2b26]/70">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <h4 className="text-xs font-bold text-slate-900">+ Adicionar nova conta Google</h4>
-              <p className="text-[11px] text-slate-500">
+              <h4 className="text-xs font-bold text-slate-900 dark:text-[#e6ede9]">+ Adicionar nova conta Google</h4>
+              <p className="text-[11px] text-slate-500 dark:text-[#95a89f]">
                 Você será direcionado para selecionar outra conta Google sem perder as contas atuais.
               </p>
             </div>
@@ -374,7 +396,7 @@ export function ConnectedAccountsModal({
                 <button
                   type="button"
                   onClick={() => setAddDemoOpen((v) => !v)}
-                  className="rounded-xl border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                  className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#67d9ae] dark:hover:bg-[#263730]"
                 >
                   {addDemoOpen ? "Fechar" : "+ Simular Conta Demo"}
                 </button>
@@ -382,14 +404,14 @@ export function ConnectedAccountsModal({
 
               <a
                 href="/api/integrations/google/connect?type=PERSONAL"
-                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs hover:bg-indigo-50 transition"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-2xs hover:bg-slate-50 transition dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:hover:bg-[#263730]"
               >
                 <Plus size={14} /> Google Pessoal
               </a>
 
               <a
                 href="/api/integrations/google/connect?type=WORK"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-indigo-700 transition"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#00875f] px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#015f43] transition dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
               >
                 <Plus size={14} /> Google Profissional
               </a>
@@ -398,8 +420,8 @@ export function ConnectedAccountsModal({
 
           {/* Demo account creation form (active in Demo Mode) */}
           {addDemoOpen && (
-            <form onSubmit={handleCreateDemoAccount} className="border-t border-indigo-100 pt-3 space-y-3">
-              <p className="text-xs font-bold text-slate-800">Adicionar conta simulada (Modo Demonstração):</p>
+            <form onSubmit={handleCreateDemoAccount} className="border-t border-emerald-200/60 pt-3 space-y-3 dark:border-[#2e3f37]">
+              <p className="text-xs font-bold text-slate-800 dark:text-[#e6ede9]">Adicionar conta simulada (Modo Demonstração):</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <input
                   required
@@ -407,19 +429,19 @@ export function ConnectedAccountsModal({
                   value={demoEmail}
                   onChange={(e) => setDemoEmail(e.target.value)}
                   placeholder="ex.: fabio@empresa.com.br"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-indigo-400"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                 />
                 <input
                   required
                   value={demoLabel}
                   onChange={(e) => setDemoLabel(e.target.value)}
                   placeholder="ex.: Google — profissional"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-indigo-400"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                 />
                 <select
                   value={demoType}
                   onChange={(e) => setDemoType(e.target.value as any)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
                 >
                   <option value="WORK">Profissional / Empresa</option>
                   <option value="PERSONAL">Pessoal</option>
@@ -429,14 +451,14 @@ export function ConnectedAccountsModal({
                 <button
                   type="button"
                   onClick={() => setAddDemoOpen(false)}
-                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-[#2e3f37] dark:text-slate-300 dark:hover:bg-[#263730]"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={creatingDemo}
-                  className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="rounded-xl bg-[#00875f] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#015f43] dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d] disabled:opacity-50"
                 >
                   {creatingDemo ? "Adicionando..." : "Confirmar Adição"}
                 </button>
@@ -446,19 +468,19 @@ export function ConnectedAccountsModal({
         </div>
 
         {/* Future Integrations Note */}
-        <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3.5 flex items-center justify-between text-xs text-slate-500">
+        <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3.5 flex items-center justify-between text-xs text-slate-500 dark:border-[#2e3f37] dark:bg-[#1e2b26]/50 dark:text-[#95a89f]">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-slate-300" />
+            <span className="h-2 w-2 rounded-full bg-slate-400" />
             <span>Microsoft 365 / Outlook &amp; Calendar</span>
           </div>
-          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-[#263730] dark:text-slate-300">
             Arquitetura preparada (Em breve)
           </span>
         </div>
 
         {/* Security / Privacy Footer */}
-        <div className="border-t border-slate-100 pt-3 flex items-center gap-2 text-[11px] text-slate-400">
-          <ShieldCheck size={16} className="text-emerald-600 shrink-0" />
+        <div className="border-t border-slate-100 pt-3 flex items-center gap-2 text-[11px] text-slate-400 dark:border-[#2e3f37] dark:text-[#95a89f]">
+          <ShieldCheck size={16} className="text-emerald-600 dark:text-[#00b37e] shrink-0" />
           <span>
             Tokens OAuth protegidos com criptografia. Nenhuma senha externa é armazenada. O login do Painel da Vida é independente de cada conta externa conectada.
           </span>

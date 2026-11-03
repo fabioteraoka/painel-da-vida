@@ -280,11 +280,6 @@ export default function Dashboard() {
   const [editingAccountLabel, setEditingAccountLabel] = useState("");
   const [editingAccountType, setEditingAccountType] = useState<"PERSONAL" | "WORK" | "OTHER">("PERSONAL");
   const [accountActionMessage, setAccountActionMessage] = useState<string | null>(null);
-  const [addAccountModalOpen, setAddAccountModalOpen] = useState(false);
-  const [newAccountEmail, setNewAccountEmail] = useState("");
-  const [newAccountLabel, setNewAccountLabel] = useState("");
-  const [newAccountTypeChoice, setNewAccountTypeChoice] = useState<"PERSONAL" | "WORK">("WORK");
-  const [addingAccountLoading, setAddingAccountLoading] = useState(false);
 
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
@@ -314,12 +309,16 @@ export default function Dashboard() {
   const [newProductTarget, setNewProductTarget] = useState("");
   const [newProductSource, setNewProductSource] = useState("Amazon");
   const [newProductUrl, setNewProductUrl] = useState("");
+  const [addProductLoading, setAddProductLoading] = useState(false);
+  const [addProductError, setAddProductError] = useState<string | null>(null);
 
   // Quick Task Creation
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<"Alta" | "Média" | "Baixa">("Média");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
+  const [taskCreateLoading, setTaskCreateLoading] = useState(false);
+  const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
 
   // Task Filter tab
   const [taskTab, setTaskTab] = useState<"TODAS" | "HOJE" | "ATRASADAS" | "CONTAS">("TODAS");
@@ -336,21 +335,57 @@ export default function Dashboard() {
   const [newAccountOpen, setNewAccountOpen] = useState(false);
   const [newAccountName, setNewAccountName] = useState("");
   const [newAccountType, setNewAccountType] = useState<PaymentAccountApi["type"]>("BANK_ACCOUNT");
+  const [newAccountLoading, setNewAccountLoading] = useState(false);
+  const [newAccountError, setNewAccountError] = useState<string | null>(null);
+
   const [newPersonOpen, setNewPersonOpen] = useState(false);
   const [newPersonName, setNewPersonName] = useState("");
   const [newPersonRelation, setNewPersonRelation] = useState("");
+  const [newPersonLoading, setNewPersonLoading] = useState(false);
+  const [newPersonError, setNewPersonError] = useState<string | null>(null);
 
   const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
+
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobile) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobile]);
+
+  // Escape key listener for mobile drawer, dropdowns, and modals
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (mobile) setMobile(false);
+        if (notificationsOpen) setNotificationsOpen(false);
+        if (profileOpen) setProfileOpen(false);
+        if (newProductOpen) setNewProductOpen(false);
+        if (newTaskOpen) setNewTaskOpen(false);
+        if (activePaymentBill) setActivePaymentBill(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mobile, notificationsOpen, profileOpen, newProductOpen, newTaskOpen, activePaymentBill]);
 
   function toggleTheme() {
     const nextTheme = darkMode ? "light" : "dark";
-    setDarkMode(nextTheme === "dark");
+    const isDark = nextTheme === "dark";
+    setDarkMode(isDark);
     document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.classList.toggle("dark", isDark);
     window.localStorage.setItem("painel-da-vida-theme", nextTheme);
   }
 
@@ -431,26 +466,6 @@ export default function Dashboard() {
     }
   }
 
-  async function handleUpdateAccount(
-    accountId: string,
-    updates: { label?: string; accountType?: "PERSONAL" | "WORK" | "OTHER" }
-  ) {
-    try {
-      const res = await fetch(`/api/integrations/accounts/${accountId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        await loadAccounts();
-        setEditingAccountId(null);
-        setAccountActionMessage("Conta atualizada com sucesso.");
-      }
-    } catch (e) {
-      console.error("Error updating account:", e);
-    }
-  }
-
   async function handleDisconnectAccount(accountId: string) {
     if (!window.confirm("Deseja realmente desconectar esta conta? As outras contas conectadas continuarão ativas e seu login no Painel da Vida permanecerá seguro.")) {
       return;
@@ -469,42 +484,6 @@ export default function Dashboard() {
       console.error("Error disconnecting account:", e);
     } finally {
       setDisconnectingAccountId(null);
-    }
-  }
-
-  async function handleAddSimulatedAccount(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newAccountEmail.trim()) return;
-    setAddingAccountLoading(true);
-    setAccountActionMessage(null);
-    try {
-      const res = await fetch("/api/integrations/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: newAccountEmail.trim(),
-          label:
-            newAccountLabel.trim() ||
-            (newAccountTypeChoice === "WORK" ? "Google — profissional" : "Google — pessoal"),
-          accountType: newAccountTypeChoice,
-        }),
-      });
-      if (res.ok) {
-        await loadAccounts();
-        await loadCalendar();
-        await loadGmail();
-        setNewAccountEmail("");
-        setNewAccountLabel("");
-        setAddAccountModalOpen(false);
-        setAccountActionMessage("Conta conectada com sucesso!");
-      } else {
-        const err = await res.json();
-        setAccountActionMessage(err.error || "Erro ao conectar conta.");
-      }
-    } catch {
-      setAccountActionMessage("Erro de rede ao conectar conta.");
-    } finally {
-      setAddingAccountLoading(false);
     }
   }
 
@@ -647,7 +626,13 @@ export default function Dashboard() {
 
   async function handleCreateTask(e: React.FormEvent) {
     e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim()) {
+      setTaskCreateError("Informe o título da tarefa.");
+      return;
+    }
+
+    setTaskCreateLoading(true);
+    setTaskCreateError(null);
 
     try {
       const priorityMap: Record<string, "LOW" | "MEDIUM" | "HIGH"> = {
@@ -666,15 +651,21 @@ export default function Dashboard() {
         }),
       });
 
-      if (response.ok) {
-        const newTask = (await response.json()) as ApiTask;
-        setTasks((prev) => [mapApiTask(newTask), ...prev]);
+      const data = await response.json().catch(() => null);
+
+      if (response.ok && data) {
+        setTasks((prev) => [mapApiTask(data as ApiTask), ...prev]);
         setNewTaskTitle("");
         setNewTaskDueDate("");
         setNewTaskOpen(false);
+      } else {
+        const errorMsg = data?.error || `Falha ao salvar tarefa (código ${response.status}).`;
+        setTaskCreateError(errorMsg);
       }
-    } catch (err) {
-      console.error("Erro ao criar tarefa:", err);
+    } catch {
+      setTaskCreateError("Erro de conexão ao criar tarefa. Verifique sua rede.");
+    } finally {
+      setTaskCreateLoading(false);
     }
   }
 
@@ -780,30 +771,56 @@ export default function Dashboard() {
 
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
-    if (!newProductTitle.trim() || !newProductTarget) return;
+    const title = newProductTitle.trim();
+    const targetPrice = parseFloat(newProductTarget);
+
+    if (!title || Number.isNaN(targetPrice) || targetPrice <= 0) {
+      setAddProductError("Informe o nome do produto e um preço alvo válido maior que zero.");
+      return;
+    }
+    if (!newProductUrl.trim()) {
+      setAddProductError("Informe o link HTTPS do produto para iniciar o monitoramento.");
+      return;
+    }
+
+    setAddProductLoading(true);
+    setAddProductError(null);
 
     try {
       const response = await fetch("/api/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: newProductTitle.trim(),
-          targetPrice: parseFloat(newProductTarget),
+          title,
+          targetPrice,
           source: newProductSource,
           url: newProductUrl.trim() || null,
         }),
       });
 
-      if (response.ok) {
-        const created = (await response.json()) as MonitoredProductApi;
-        setProducts((prev) => [created, ...prev]);
+      const data = await response.json().catch(() => null);
+
+      if (response.ok && data) {
+        setProducts((prev) => [data as MonitoredProductApi, ...prev]);
         setNewProductTitle("");
         setNewProductTarget("");
         setNewProductUrl("");
         setNewProductOpen(false);
+        setPriceCheckMessage(`"${title}" cadastrado com sucesso.`);
+      } else {
+        const errorMsg = (data && typeof data.error === "string" && data.error)
+          ? data.error
+          : response.status === 401
+            ? "Você precisa estar autenticado para cadastrar produtos."
+            : response.status === 503
+              ? "Serviço de banco de dados temporariamente indisponível."
+              : `Não foi possível cadastrar o produto (erro ${response.status}).`;
+        setAddProductError(errorMsg);
       }
-    } catch (err) {
-      console.error("Erro ao cadastrar produto:", err);
+    } catch {
+      setAddProductError("Erro de conexão com o servidor. Verifique sua rede e tente novamente.");
+    } finally {
+      setAddProductLoading(false);
     }
   }
 
@@ -814,7 +831,7 @@ export default function Dashboard() {
   // Calculations for Summary Header ("Seu dia em 30 segundos")
   const openBills = useMemo(() => bills.filter((bill) => bill.status !== "PAID"), [bills]);
   const overdueBills = useMemo(() => openBills.filter((bill) => bill.dueDate && new Date(bill.dueDate) < today), [openBills, today]);
-  
+
   const billsDue10Days = useMemo(() => {
     const todayTime = today.getTime();
     const tenDays = 10 * 24 * 60 * 60 * 1000;
@@ -886,10 +903,10 @@ export default function Dashboard() {
     (productOpportunities.length > 0 ? 1 : 0);
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] text-slate-900">
+    <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)] transition-colors duration-150">
       <div className="flex min-h-screen">
         {/* Sidebar Desktop */}
-        <aside className="hidden w-[260px] shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
+        <aside className="hidden w-[260px] shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col dark:border-[#2e3f37] dark:bg-[#17211d]">
           <Sidebar
             connectedAccounts={connectedAccounts}
             onOpenAccountsModal={() => setAccountsModalOpen(true)}
@@ -899,22 +916,32 @@ export default function Dashboard() {
         {/* Mobile Backdrop */}
         {mobile && (
           <div
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs lg:hidden"
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden transition-opacity"
             onClick={() => setMobile(false)}
+            aria-hidden="true"
           />
         )}
 
         {/* Mobile Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-[280px] border-r border-slate-200 bg-white transition-transform lg:hidden ${
+          id="mobile-sidebar"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu principal de navegação"
+          className={`fixed inset-y-0 left-0 z-50 w-[280px] border-r border-slate-200 bg-white transition-transform duration-200 ease-in-out lg:hidden dark:border-[#2e3f37] dark:bg-[#17211d] ${
             mobile ? "translate-x-0" : "-translate-x-full"
           }`}
         >
           <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 p-5">
+            <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-[#2e3f37]">
               <Logo />
-              <button onClick={() => setMobile(false)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100">
-                <X size={20} />
+              <button
+                type="button"
+                onClick={() => setMobile(false)}
+                aria-label="Fechar menu de navegação"
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-[#1e2b26] transition"
+              >
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             <SidebarContent
@@ -923,6 +950,7 @@ export default function Dashboard() {
                 setAccountsModalOpen(true);
                 setMobile(false);
               }}
+              onNavigate={() => setMobile(false)}
             />
           </div>
         </aside>
@@ -930,15 +958,19 @@ export default function Dashboard() {
         {/* Main Content Area */}
         <section className="min-w-0 flex-1">
           {/* Header Bar */}
-          <header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8 dark:border-[#2e3f37] dark:bg-[#17211d]/95">
             <div className="flex items-center gap-3">
               <button
+                type="button"
                 onClick={() => setMobile(true)}
-                className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
+                aria-label="Abrir menu de navegação"
+                aria-expanded={mobile}
+                aria-controls="mobile-sidebar"
+                className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 lg:hidden dark:text-slate-300 dark:hover:bg-[#1e2b26] transition"
               >
-                <Menu size={21} />
+                <Menu size={21} aria-hidden="true" />
               </button>
-              <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-400 sm:flex">
+              <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-400 sm:flex dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#95a89f]">
                 <Search size={16} />
                 <span>Buscar eventos, tarefas, boletos...</span>
               </div>
@@ -950,7 +982,7 @@ export default function Dashboard() {
                 onClick={toggleTheme}
                 aria-label={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}
                 title={darkMode ? "Modo claro" : "Modo escuro"}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-slate-200 dark:hover:bg-[#263730]"
               >
                 {darkMode ? <Sun size={17} /> : <Moon size={17} />}
               </button>
@@ -958,7 +990,7 @@ export default function Dashboard() {
                 type="button"
                 onClick={() => setAccountsModalOpen(true)}
                 title="Clique para gerenciar suas contas Google conectadas"
-                className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 sm:inline-flex hover:bg-emerald-100 transition cursor-pointer"
+                className="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 sm:inline-flex hover:bg-emerald-100 transition cursor-pointer dark:border-[#264f40] dark:bg-[#17382d] dark:text-[#67d9ae] dark:hover:bg-[#1f4a3c]"
               >
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                 {connectedAccounts.length > 1
@@ -971,8 +1003,8 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setNotificationsOpen((open) => !open)}
-                  aria-label="Notificações"
-                  className="relative rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:bg-slate-50"
+                  aria-label="Notificações e alertas do dia"
+                  className="relative rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:bg-slate-50 dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-slate-200 dark:hover:bg-[#263730] transition"
                 >
                   <Bell size={18} />
                   {notificationCount > 0 && (
@@ -982,40 +1014,40 @@ export default function Dashboard() {
                   )}
                 </button>
                 {notificationsOpen && (
-                  <div className="absolute right-0 top-12 z-50 w-[340px] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                      <h3 className="text-sm font-semibold text-slate-800">Alertas do Dia</h3>
-                      <span className="text-[11px] font-medium text-slate-400">{notificationCount} pendências</span>
+                  <div className="absolute right-0 top-12 z-50 w-[340px] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-[#2e3f37]">
+                      <h3 className="text-sm font-semibold text-slate-800 dark:text-[#e6ede9]">Alertas do Dia</h3>
+                      <span className="text-[11px] font-medium text-slate-400 dark:text-[#95a89f]">{notificationCount} pendências</span>
                     </div>
                     <div className="mt-2 space-y-1.5 max-h-[380px] overflow-y-auto">
                       {notificationCount === 0 ? (
-                        <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Tudo em ordem no momento.</p>
+                        <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500 dark:bg-[#1e2b26] dark:text-[#95a89f]">Tudo em ordem no momento.</p>
                       ) : (
                         <>
                           {conflictIds.size > 0 && (
                             <NotificationItem
-                              icon={<AlertTriangle className="text-amber-600" size={16} />}
+                              icon={<AlertTriangle className="text-amber-600 dark:text-amber-400" size={16} />}
                               title={`${conflictIds.size / 2} conflito(s) de horário na agenda!`}
                               badge="Urgente"
                             />
                           )}
                           {billsDue10Days.length > 0 && (
                             <NotificationItem
-                              icon={<FileText className="text-red-600" size={16} />}
+                              icon={<FileText className="text-red-600 dark:text-rose-400" size={16} />}
                               title={`${billsDue10Days.length} conta(s) vencendo nos próximos 10 dias`}
                               badge="Atenção"
                             />
                           )}
                           {productOpportunities.length > 0 && (
                             <NotificationItem
-                              icon={<ShoppingCart className="text-emerald-600" size={16} />}
+                              icon={<ShoppingCart className="text-emerald-600 dark:text-[#00b37e]" size={16} />}
                               title={`${productOpportunities.length} produto atingiu o preço desejado!`}
                               badge="Oportunidade"
                             />
                           )}
                           {highPriorityPending > 0 && (
                             <NotificationItem
-                              icon={<Target className="text-indigo-600" size={16} />}
+                              icon={<Target className="text-[#00875f] dark:text-[#00b37e]" size={16} />}
                               title={`${highPriorityPending} tarefa(s) de alta prioridade`}
                             />
                           )}
@@ -1031,16 +1063,16 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setProfileOpen((open) => !open)}
-                  title="Menu do perfil"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white shadow-xs transition hover:bg-indigo-700"
+                  aria-label="Menu do usuário"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-[#00875f] text-xs font-semibold text-white shadow-xs transition hover:bg-[#015f43] dark:bg-[#00b37e] dark:text-[#00291d]"
                 >
                   FT
                 </button>
                 {profileOpen && (
-                  <div className="absolute right-0 top-12 z-50 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-                    <div className="px-3 py-2 border-b border-slate-100">
-                      <p className="text-xs font-semibold text-slate-800">Fábio Teraoka</p>
-                      <p className="text-[11px] text-slate-400 truncate">Painel da Vida</p>
+                  <div className="absolute right-0 top-12 z-50 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]">
+                    <div className="px-3 py-2 border-b border-slate-100 dark:border-[#2e3f37]">
+                      <p className="text-xs font-semibold text-slate-800 dark:text-[#e6ede9]">Fábio Teraoka</p>
+                      <p className="text-[11px] text-slate-400 truncate dark:text-[#95a89f]">Painel da Vida</p>
                     </div>
                     <button
                       type="button"
@@ -1048,17 +1080,17 @@ export default function Dashboard() {
                         setAccountsModalOpen(true);
                         setProfileOpen(false);
                       }}
-                      className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold text-indigo-700 hover:bg-indigo-50 transition"
+                      className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold text-[#00875f] hover:bg-emerald-50 transition dark:text-[#00b37e] dark:hover:bg-[#1e2b26]"
                     >
                       <span>Contas Conectadas</span>
-                      <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] text-indigo-800 font-bold">
+                      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800 font-bold dark:bg-[#17382d] dark:text-[#67d9ae]">
                         {connectedAccounts.length}
                       </span>
                     </button>
                     <button
                       type="button"
                       onClick={() => void signOut({ callbackUrl: "/login" })}
-                      className="w-full mt-1 rounded-xl px-3 py-2 text-left text-xs font-medium text-red-600 hover:bg-red-50"
+                      className="w-full mt-1 rounded-xl px-3 py-2 text-left text-xs font-medium text-red-600 hover:bg-red-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
                     >
                       Sair da conta
                     </button>
@@ -1072,58 +1104,57 @@ export default function Dashboard() {
             {/* Top Greeting & Date */}
             <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
               <div>
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-indigo-600 uppercase tracking-wider">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[#00875f] uppercase tracking-wider dark:text-[#00b37e]">
                   <CalendarDays size={14} />
                   {dateLabel}
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-[#e6ede9]">
                   ☀️ Bom dia, Fábio.
                 </h1>
-                <p className="mt-1.5 text-sm text-slate-500 sm:text-base">
+                <p className="mt-1.5 text-sm text-slate-500 sm:text-base dark:text-[#95a89f]">
                   Seu filtro inteligente: veja apenas o que realmente importa e precisa da sua ação.
                 </p>
               </div>
 
               <div className="grid grid-cols-4 gap-2 sm:gap-3">
-                <Stat value={todayEventCount} label="Agenda" color="text-blue-600" />
-                <Stat value={pendingTasks.length} label="Tarefas" color="text-indigo-600" />
-                <Stat value={actionableEmailsCount} label="E-mails" color="text-purple-600" />
-                <Stat value={billsDue10Days.length} label="Boletos 10d" color="text-amber-600" />
+                <Stat value={todayEventCount} label="Agenda" color="text-blue-600 dark:text-blue-400" />
+                <Stat value={pendingTasks.length} label="Tarefas" color="text-[#00875f] dark:text-[#00b37e]" />
+                <Stat value={actionableEmailsCount} label="E-mails" color="text-purple-600 dark:text-purple-400" />
+                <Stat value={billsDue10Days.length} label="Boletos 10d" color="text-amber-600 dark:text-amber-400" />
               </div>
             </section>
 
-            {/* SEU DIA EM 30 SEGUNDOS (Direct implementation of user's core vision) */}
-            <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-white p-5 shadow-xs sm:p-6">
+            {/* SEU DIA EM 30 SEGUNDOS */}
+            <section className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/70 via-white to-white p-5 shadow-xs sm:p-6 dark:border-[#2e3f37] dark:bg-gradient-to-br dark:from-[#17382d]/80 dark:via-[#17211d] dark:to-[#17211d]">
               <div className="flex flex-col gap-4 md:flex-row md:items-start">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-xs">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#00875f] text-white shadow-xs dark:bg-[#00b37e] dark:text-[#00291d]">
                   <Sparkles size={22} />
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2.5">
-                    <h2 className="text-base font-bold text-slate-900">Seu dia em 30 segundos</h2>
-                    <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-[#e6ede9]">Seu dia em 30 segundos</h2>
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-[#1e2b26] dark:text-[#67d9ae]">
                       Síntese em tempo real
                     </span>
                   </div>
 
-                  {/* The requested 4-point synthesis format */}
-                  <div className="mt-3 space-y-1.5 text-sm text-slate-700 leading-relaxed font-medium">
+                  <div className="mt-3 space-y-1.5 text-sm text-slate-700 leading-relaxed font-medium dark:text-[#c7d5cd]">
                     <p>
-                      📅 Você tem <strong className="text-slate-900">{todayEventCount} compromissos</strong>,{" "}
-                      <strong className="text-slate-900">{pendingTasks.length} tarefas pendentes</strong> e{" "}
-                      <strong className="text-slate-900">{actionableEmailsCount} e-mails</strong> que merecem atenção hoje.
+                      📅 Você tem <strong className="text-slate-900 dark:text-white">{todayEventCount} compromissos</strong>,{" "}
+                      <strong className="text-slate-900 dark:text-white">{pendingTasks.length} tarefas pendentes</strong> e{" "}
+                      <strong className="text-slate-900 dark:text-white">{actionableEmailsCount} e-mails</strong> que merecem atenção hoje.
                     </p>
-                    <p className={billsDue10Days.length > 0 ? "text-amber-800" : "text-slate-600"}>
+                    <p className={billsDue10Days.length > 0 ? "text-amber-800 dark:text-amber-300" : "text-slate-600 dark:text-[#95a89f]"}>
                       ⚠️ <strong className="font-semibold">{billsDue10Days.length} conta(s)</strong> vencem nos próximos 10 dias
                       {overdueBills.length > 0 && ` (sendo ${overdueBills.length} já vencida(s)!)`}.
                     </p>
                     {productOpportunities.length > 0 ? (
-                      <p className="text-emerald-700 font-semibold">
+                      <p className="text-emerald-700 font-semibold dark:text-[#67d9ae]">
                         🛒 <strong>{productOpportunities.length} produto monitorado</strong> atingiu o preço desejado que você definiu!
                       </p>
                     ) : (
-                      <p className="text-slate-500 text-xs">
+                      <p className="text-slate-500 text-xs dark:text-[#95a89f]">
                         🛒 {products.length} produto(s) monitorado(s) ativamente (nenhum atingiu a meta hoje).
                       </p>
                     )}
@@ -1132,24 +1163,24 @@ export default function Dashboard() {
                   {/* Highlights / Alert tags */}
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     {conflictIds.size > 0 && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 dark:bg-rose-950/60 dark:text-rose-300 dark:border dark:border-rose-800/40">
                         <AlertTriangle size={13} />
                         Conflito de agenda detectado
                       </span>
                     )}
                     {categorizedEmails.RESPOND_TODAY.length > 0 && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 dark:border dark:border-amber-800/40">
                         <Mail size={13} />
                         {categorizedEmails.RESPOND_TODAY.length} para responder hoje
                       </span>
                     )}
                     {overdueTasks.length > 0 && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 border border-red-200">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 border border-red-200 dark:bg-rose-950/40 dark:border-rose-900/50 dark:text-rose-300">
                         <Clock3 size={13} />
                         {overdueTasks.length} tarefa(s) atrasada(s)
                       </span>
                     )}
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-[#1e2b26] dark:text-[#95a89f]">
                       Total de contas em aberto: R$ {billTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </span>
                   </div>
@@ -1158,10 +1189,10 @@ export default function Dashboard() {
             </section>
 
             {/* SEÇÃO 1: CONTAS E BOLETOS */}
-            <div id="contas">
+            <div id="contas" tabIndex={-1}>
               <Card
                 title="Contas a pagar e Boletos"
-                icon={<FileText size={19} className="text-indigo-600" />}
+                icon={<FileText size={19} className="text-[#00875f] dark:text-[#00b37e]" />}
                 action={billScanning ? "Analisando..." : "Sincronizar Gmail agora"}
                 onActionClick={async () => {
                   setBillScanning(true);
@@ -1183,27 +1214,27 @@ export default function Dashboard() {
                 }}
               >
                 <div className="flex flex-col gap-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-[#2e3f37]">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-xl bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700">
+                      <span className="rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 dark:bg-[#17382d] dark:text-[#67d9ae]">
                         {openBills.length} em aberto
                       </span>
-                      <span className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700">
+                      <span className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 dark:bg-[#1e2b26] dark:text-[#e6ede9]">
                         Total: R$ {billTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </span>
                       {overdueBills.length > 0 && (
-                        <span className="rounded-xl bg-red-100 px-3 py-1.5 text-xs font-bold text-red-700">
+                        <span className="rounded-xl bg-red-100 px-3 py-1.5 text-xs font-bold text-red-700 dark:bg-rose-950/60 dark:text-rose-300">
                           {overdueBills.length} vencida(s)
                         </span>
                       )}
                     </div>
-                    {billMessage && <span className="text-xs font-medium text-slate-500">{billMessage}</span>}
+                    {billMessage && <span className="text-xs font-medium text-slate-500 dark:text-[#95a89f]">{billMessage}</span>}
                   </div>
 
                   {billLoading ? (
-                    <p className="py-4 text-center text-sm text-slate-400">Carregando contas detectadas...</p>
+                    <p className="py-4 text-center text-sm text-slate-400 dark:text-[#95a89f]">Carregando contas detectadas...</p>
                   ) : bills.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+                    <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500 dark:border-[#2e3f37] dark:text-[#95a89f]">
                       Nenhuma conta identificada ainda. Clique em &quot;Sincronizar Gmail agora&quot; para analisar boletos de energia, condomínio, internet e cartões.
                     </div>
                   ) : (
@@ -1239,90 +1270,140 @@ export default function Dashboard() {
                   )}
 
                   {/* Gerenciamento de Pessoas e Contas de Pagamento */}
-                  <div className="border-t border-slate-100 pt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-4">
+                  <div className="border-t border-slate-100 pt-3 flex flex-wrap items-center justify-between gap-3 text-xs dark:border-[#2e3f37]">
+                    <div className="flex flex-wrap items-center gap-4">
                       {!newPersonOpen ? (
                         <button
                           type="button"
-                          onClick={() => setNewPersonOpen(true)}
-                          className="flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700"
+                          onClick={() => {
+                            setNewPersonOpen(true);
+                            setNewPersonError(null);
+                          }}
+                          className="flex items-center gap-1 font-semibold text-[#00875f] hover:underline dark:text-[#00b37e]"
                         >
                           <Plus size={14} /> Cadastrar pessoa (ex.: Carol)
                         </button>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <input
                             value={newPersonName}
                             onChange={(e) => setNewPersonName(e.target.value)}
                             placeholder="Nome (ex.: Carol)"
-                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs outline-none focus:border-indigo-400"
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9]"
                           />
                           <input
                             value={newPersonRelation}
                             onChange={(e) => setNewPersonRelation(e.target.value)}
                             placeholder="Relação (ex.: Esposa)"
-                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs outline-none focus:border-indigo-400"
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9]"
                           />
                           <button
                             type="button"
+                            disabled={newPersonLoading}
                             onClick={async () => {
-                              if (!newPersonName.trim()) return;
-                              const response = await fetch("/api/people", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ name: newPersonName, relation: newPersonRelation }),
-                              });
-                              if (response.ok) {
-                                const person = await response.json();
-                                setPeople((items) => [...items, person]);
-                                setNewPersonName("");
-                                setNewPersonRelation("");
-                                setNewPersonOpen(false);
+                              if (!newPersonName.trim()) {
+                                setNewPersonError("Informe o nome.");
+                                return;
+                              }
+                              setNewPersonLoading(true);
+                              setNewPersonError(null);
+                              try {
+                                const response = await fetch("/api/people", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ name: newPersonName, relation: newPersonRelation }),
+                                });
+                                if (response.ok) {
+                                  const person = await response.json();
+                                  setPeople((items) => [...items, person]);
+                                  setNewPersonName("");
+                                  setNewPersonRelation("");
+                                  setNewPersonOpen(false);
+                                } else {
+                                  setNewPersonError("Falha ao salvar pessoa.");
+                                }
+                              } catch {
+                                setNewPersonError("Erro de conexão ao salvar.");
+                              } finally {
+                                setNewPersonLoading(false);
                               }
                             }}
-                            className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white"
+                            className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white dark:bg-[#00875f] dark:text-white"
                           >
-                            Salvar
+                            {newPersonLoading ? "Salvando..." : "Salvar"}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewPersonOpen(false)}
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          >
+                            Cancelar
+                          </button>
+                          {newPersonError && <span className="text-red-600 text-[11px]">{newPersonError}</span>}
                         </div>
                       )}
 
                       {!newAccountOpen ? (
                         <button
                           type="button"
-                          onClick={() => setNewAccountOpen(true)}
-                          className="flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700"
+                          onClick={() => {
+                            setNewAccountOpen(true);
+                            setNewAccountError(null);
+                          }}
+                          className="flex items-center gap-1 font-semibold text-[#00875f] hover:underline dark:text-[#00b37e]"
                         >
                           <Plus size={14} /> Conta de saída (ex.: Itaú Débito)
                         </button>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <input
                             value={newAccountName}
                             onChange={(e) => setNewAccountName(e.target.value)}
                             placeholder="Ex.: Itaú Débito"
-                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs outline-none focus:border-indigo-400"
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9]"
                           />
                           <button
                             type="button"
+                            disabled={newAccountLoading}
                             onClick={async () => {
-                              if (!newAccountName.trim()) return;
-                              const response = await fetch("/api/payment-accounts", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ name: newAccountName, type: newAccountType }),
-                              });
-                              if (response.ok) {
-                                const account = await response.json();
-                                setPaymentAccounts((items) => [...items, account]);
-                                setNewAccountName("");
-                                setNewAccountOpen(false);
+                              if (!newAccountName.trim()) {
+                                setNewAccountError("Informe o nome da conta.");
+                                return;
+                              }
+                              setNewAccountLoading(true);
+                              setNewAccountError(null);
+                              try {
+                                const response = await fetch("/api/payment-accounts", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ name: newAccountName, type: newAccountType }),
+                                });
+                                if (response.ok) {
+                                  const account = await response.json();
+                                  setPaymentAccounts((items) => [...items, account]);
+                                  setNewAccountName("");
+                                  setNewAccountOpen(false);
+                                } else {
+                                  setNewAccountError("Falha ao salvar conta.");
+                                }
+                              } catch {
+                                setNewAccountError("Erro de conexão ao salvar.");
+                              } finally {
+                                setNewAccountLoading(false);
                               }
                             }}
-                            className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white"
+                            className="rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white dark:bg-[#00875f] dark:text-white"
                           >
-                            Salvar
+                            {newAccountLoading ? "Salvando..." : "Salvar"}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewAccountOpen(false)}
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          >
+                            Cancelar
+                          </button>
+                          {newAccountError && <span className="text-red-600 text-[11px]">{newAccountError}</span>}
                         </div>
                       )}
                     </div>
@@ -1331,18 +1412,18 @@ export default function Dashboard() {
               </Card>
             </div>
 
-            {/* SEÇÃO 2 & 3: AGENDA (Google Calendar com conflitos) e TAREFAS */}
+            {/* SEÇÃO 2 & 3: AGENDA E TAREFAS */}
             <div className="grid gap-6 xl:grid-cols-[1.25fr_1fr]">
               {/* AGENDA */}
-              <div className="space-y-6" id="agenda">
+              <div className="space-y-6" id="agenda" tabIndex={-1}>
                 <Card
                   title="Agenda Consolidada do Dia"
-                  icon={<CalendarDays size={19} className="text-blue-600" />}
+                  icon={<CalendarDays size={19} className="text-blue-600 dark:text-blue-400" />}
                   action="Abrir Google Agenda"
                   actionHref="https://calendar.google.com/calendar/u/0/r/day"
                 >
                   {/* Account Selector Filter */}
-                  <div className="mb-3 flex items-center justify-between gap-2 flex-wrap border-b border-slate-100 pb-2.5">
+                  <div className="mb-3 flex items-center justify-between gap-2 flex-wrap border-b border-slate-100 pb-2.5 dark:border-[#2e3f37]">
                     <div className="flex items-center gap-1 overflow-x-auto text-xs font-semibold">
                       <button
                         type="button"
@@ -1353,7 +1434,7 @@ export default function Dashboard() {
                         className={`rounded-lg px-2.5 py-1 transition ${
                           selectedCalendarAccount === "all"
                             ? "bg-blue-600 text-white"
-                            : "text-slate-500 hover:bg-slate-100"
+                            : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"
                         }`}
                       >
                         Todas as contas (Consolidada)
@@ -1372,7 +1453,7 @@ export default function Dashboard() {
                             className={`rounded-lg px-2.5 py-1 inline-flex items-center gap-1.5 transition ${
                               active
                                 ? isWork ? "bg-purple-600 text-white" : "bg-blue-600 text-white"
-                                : "text-slate-500 hover:bg-slate-100"
+                                : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"
                             }`}
                           >
                             <span
@@ -1389,7 +1470,7 @@ export default function Dashboard() {
                     <button
                       type="button"
                       onClick={() => setAccountsModalOpen(true)}
-                      className="text-[11px] font-semibold text-indigo-600 hover:underline inline-flex items-center gap-1 shrink-0"
+                      className="text-[11px] font-semibold text-[#00875f] hover:underline inline-flex items-center gap-1 shrink-0 dark:text-[#00b37e]"
                     >
                       <Plus size={13} /> Gerenciar contas
                     </button>
@@ -1397,13 +1478,13 @@ export default function Dashboard() {
 
                   {/* Cross-calendar conflict alert */}
                   {conflictInfo.crossAccountConflicts.length > 0 && (
-                    <div className="mb-3 rounded-xl border border-red-200 bg-red-50/80 p-3 text-xs text-red-900 space-y-1.5 shadow-2xs">
-                      <div className="flex items-center gap-2 font-bold text-red-800">
-                        <AlertTriangle size={16} className="text-red-600 shrink-0" />
+                    <div className="mb-3 rounded-xl border border-red-200 bg-red-50/80 p-3 text-xs text-red-900 space-y-1.5 shadow-2xs dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">
+                      <div className="flex items-center gap-2 font-bold text-red-800 dark:text-rose-200">
+                        <AlertTriangle size={16} className="text-red-600 shrink-0 dark:text-rose-400" />
                         <span>⚠️ Conflito entre calendários detectado: compromisso pessoal e profissional sobrepostos!</span>
                       </div>
                       {conflictInfo.crossAccountConflicts.map((c, i) => (
-                        <p key={i} className="text-[11px] text-red-700 pl-6 leading-relaxed">
+                        <p key={i} className="text-[11px] text-red-700 pl-6 leading-relaxed dark:text-rose-300">
                           • Às {c.time}: <strong>[{c.accountA}] &ldquo;{c.titleA}&rdquo;</strong> coincide com{" "}
                           <strong>[{c.accountB}] &ldquo;{c.titleB}&rdquo;</strong>
                         </p>
@@ -1412,19 +1493,19 @@ export default function Dashboard() {
                   )}
 
                   {conflictIds.size > 0 && conflictInfo.crossAccountConflicts.length === 0 && (
-                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 flex items-center gap-2">
-                      <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 flex items-center gap-2 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
+                      <AlertTriangle size={16} className="text-amber-600 shrink-0 dark:text-amber-400" />
                       <span>
                         <strong>Atenção:</strong> Há sobreposição de horário em compromissos marcados abaixo.
                       </span>
                     </div>
                   )}
 
-                  <div className="divide-y divide-slate-100">
+                  <div className="divide-y divide-slate-100 dark:divide-[#2e3f37]">
                     {calendarLoading ? (
-                      <p className="py-4 text-sm text-slate-400">Carregando compromissos...</p>
+                      <p className="py-4 text-sm text-slate-400 dark:text-[#95a89f]">Carregando compromissos...</p>
                     ) : realCalendarEvents.length === 0 ? (
-                      <div className="py-6 text-center text-sm text-slate-500">
+                      <div className="py-6 text-center text-sm text-slate-500 dark:text-[#95a89f]">
                         {calendarError
                           ? "Google Calendar não conectado ou permissão pendente."
                           : "Nenhum compromisso agendado para hoje nesta visualização."}
@@ -1441,19 +1522,19 @@ export default function Dashboard() {
 
                         return (
                           <div key={event.id} className="flex gap-4 py-3.5 first:pt-1">
-                            <div className="w-[60px] shrink-0 text-sm font-bold text-slate-600">{time}</div>
-                            <div className={`flex-1 min-w-0 border-l-2 pl-3.5 ${isConflict ? "border-amber-400 bg-amber-50/30 rounded-r-xl py-1" : "border-slate-200"}`}>
+                            <div className="w-[60px] shrink-0 text-sm font-bold text-slate-600 dark:text-slate-300">{time}</div>
+                            <div className={`flex-1 min-w-0 border-l-2 pl-3.5 ${isConflict ? "border-amber-400 bg-amber-50/30 rounded-r-xl py-1 dark:bg-amber-950/20" : "border-slate-200 dark:border-[#2e3f37]"}`}>
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <h3 className="text-sm font-semibold text-slate-800 truncate">
+                                  <h3 className="text-sm font-semibold text-slate-800 truncate dark:text-[#e6ede9]">
                                     {event.summary ?? "Sem título"}
                                   </h3>
                                   {event.accountLabel && (
                                     <span
                                       className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold shrink-0 ${
                                         isWork
-                                          ? "bg-purple-100 text-purple-800 border border-purple-200"
-                                          : "bg-blue-100 text-blue-800 border border-blue-200"
+                                          ? "bg-purple-100 text-purple-800 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800/40"
+                                          : "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/40"
                                       }`}
                                       title={event.accountEmail}
                                     >
@@ -1466,25 +1547,25 @@ export default function Dashboard() {
                                     href={event.htmlLink}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-xs text-indigo-600 hover:underline inline-flex items-center gap-1 shrink-0"
+                                    className="text-xs text-[#00875f] hover:underline inline-flex items-center gap-1 shrink-0 dark:text-[#00b37e]"
                                   >
                                     Abrir <ExternalLink size={12} />
                                   </a>
                                 )}
                               </div>
                               {isConflict && (
-                                <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                                <span className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
                                   ⚠️ Conflito de horário
                                 </span>
                               )}
                               {event.description && (
-                                <p className="mt-1 text-xs text-slate-500 line-clamp-2">{event.description}</p>
+                                <p className="mt-1 text-xs text-slate-500 line-clamp-2 dark:text-[#95a89f]">{event.description}</p>
                               )}
                               {event.location && (
-                                <p className="mt-1 text-[11px] text-slate-400">{event.location}</p>
+                                <p className="mt-1 text-[11px] text-slate-400 dark:text-[#95a89f]/80">{event.location}</p>
                               )}
                               {end && start && (
-                                <p className="mt-0.5 text-[11px] text-slate-400">
+                                <p className="mt-0.5 text-[11px] text-slate-400 dark:text-[#95a89f]/80">
                                   Término: {end.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                                 </p>
                               )}
@@ -1496,52 +1577,81 @@ export default function Dashboard() {
                   </div>
                 </Card>
 
-                {/* MONITORAMENTO DE PREÇOS (Item 6 da visão de Fábio) */}
-                <div id="compras">
+                {/* MONITORAMENTO DE PREÇOS */}
+                <div id="compras" tabIndex={-1}>
                   <Card
                     title="Monitoramento de Preços"
-                    icon={<ShoppingCart size={19} className="text-emerald-600" />}
+                    icon={<ShoppingCart size={19} className="text-[#00875f] dark:text-[#00b37e]" />}
                     action="+ Monitorar Produto"
-                    onActionClick={() => setNewProductOpen((v) => !v)}
+                    onActionClick={() => {
+                      setNewProductOpen((v) => !v);
+                      setAddProductError(null);
+                    }}
                   >
                     <div className="space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-[11px] text-slate-500">Verificação automática diária; consulte manualmente quando quiser.</p>
+                        <p className="text-[11px] text-slate-500 dark:text-[#95a89f]">Verificação automática diária; consulte manualmente quando quiser.</p>
                         <button
                           type="button"
                           onClick={() => void handleCheckPrices()}
                           disabled={priceChecking || productsLoading || products.length === 0}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#67d9ae] dark:hover:bg-[#263730]"
                         >
                           <RefreshCw size={13} className={priceChecking ? "animate-spin" : ""} />
                           {priceChecking ? "Consultando..." : "Consultar preços agora"}
                         </button>
                       </div>
-                      {priceCheckMessage && <p role="status" className="text-xs text-slate-600">{priceCheckMessage}</p>}
+                      {priceCheckMessage && (
+                        <p role="status" className="rounded-xl bg-slate-100 p-2 text-xs text-slate-700 dark:bg-[#1e2b26] dark:text-[#e6ede9]">
+                          {priceCheckMessage}
+                        </p>
+                      )}
+
+                      {/* Modal/Form de Cadastro de Produto */}
                       {newProductOpen && (
-                        <form onSubmit={handleAddProduct} className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
-                          <h4 className="text-xs font-bold text-slate-800">Novo Produto para Monitorar</h4>
+                        <form onSubmit={handleAddProduct} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-3 dark:border-[#2e3f37] dark:bg-[#1e2b26]/70">
+                          <h4 className="text-xs font-bold text-slate-800 dark:text-[#e6ede9]">Novo Produto para Monitorar</h4>
+
+                          {addProductError && (
+                            <div
+                              role="alert"
+                              className="rounded-xl border border-rose-300 bg-rose-50 p-2.5 text-xs font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 flex items-center gap-2"
+                            >
+                              <AlertCircle size={15} className="shrink-0 text-rose-600 dark:text-rose-400" />
+                              <span>{addProductError}</span>
+                            </div>
+                          )}
+
                           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                             <input
                               required
+                              disabled={addProductLoading}
                               placeholder="Nome do produto (ex.: Panela de Pressão)"
                               value={newProductTitle}
-                              onChange={(e) => setNewProductTitle(e.target.value)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                              onChange={(e) => {
+                                setNewProductTitle(e.target.value);
+                                if (addProductError) setAddProductError(null);
+                              }}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-[#00875f] disabled:opacity-60 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                             />
                             <input
                               required
+                              disabled={addProductLoading}
                               type="number"
                               step="0.01"
                               placeholder="Preço desejado (ex.: 250.00)"
                               value={newProductTarget}
-                              onChange={(e) => setNewProductTarget(e.target.value)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                              onChange={(e) => {
+                                setNewProductTarget(e.target.value);
+                                if (addProductError) setAddProductError(null);
+                              }}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-[#00875f] disabled:opacity-60 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                             />
                             <select
+                              disabled={addProductLoading}
                               value={newProductSource}
                               onChange={(e) => setNewProductSource(e.target.value)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs disabled:opacity-60 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
                             >
                               <option value="Amazon">Amazon</option>
                               <option value="Buscapé">Buscapé</option>
@@ -1552,34 +1662,43 @@ export default function Dashboard() {
                           </div>
                           <input
                             required
+                            disabled={addProductLoading}
                             type="url"
                             placeholder="Link HTTPS do produto (obrigatório)"
                             value={newProductUrl}
-                            onChange={(e) => setNewProductUrl(e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                            onChange={(e) => {
+                              setNewProductUrl(e.target.value);
+                              if (addProductError) setAddProductError(null);
+                            }}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-[#00875f] disabled:opacity-60 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                           />
                           <div className="flex justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => setNewProductOpen(false)}
-                              className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
+                              disabled={addProductLoading}
+                              onClick={() => {
+                                setNewProductOpen(false);
+                                setAddProductError(null);
+                              }}
+                              className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-[#2e3f37] dark:text-slate-300 dark:hover:bg-[#263730]"
                             >
                               Cancelar
                             </button>
                             <button
                               type="submit"
-                              className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                              disabled={addProductLoading}
+                              className="rounded-xl bg-[#00875f] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#015f43] disabled:opacity-50 dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
                             >
-                              Adicionar
+                              {addProductLoading ? "Cadastrando..." : "Adicionar"}
                             </button>
                           </div>
                         </form>
                       )}
 
                       {productsLoading ? (
-                        <p className="py-3 text-xs text-slate-400">Carregando monitoramento de preços...</p>
+                        <p className="py-3 text-xs text-slate-400 dark:text-[#95a89f]">Carregando monitoramento de preços...</p>
                       ) : products.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500">
+                        <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-500 dark:border-[#2e3f37] dark:text-[#95a89f]">
                           Nenhum produto cadastrado. Adicione itens (como eletrônicos, utensílios) para o Painel avisar quando atingirem seu valor limite!
                         </div>
                       ) : (
@@ -1591,40 +1710,40 @@ export default function Dashboard() {
                                 key={p.id}
                                 className={`rounded-xl border p-3 transition ${
                                   isDeal
-                                    ? "border-emerald-300 bg-emerald-50/40 shadow-xs"
-                                    : "border-slate-100 bg-white hover:bg-slate-50"
+                                    ? "border-emerald-300 bg-emerald-50/40 shadow-xs dark:border-[#264f40] dark:bg-[#17382d]/40"
+                                    : "border-slate-100 bg-white hover:bg-slate-50 dark:border-[#2e3f37] dark:bg-[#17211d] dark:hover:bg-[#1e2b26]"
                                 }`}
                               >
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                   <div>
                                     <div className="flex items-center gap-2">
-                                      <h4 className="text-xs font-bold text-slate-800">{p.title}</h4>
-                                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                                      <h4 className="text-xs font-bold text-slate-800 dark:text-[#e6ede9]">{p.title}</h4>
+                                      <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-[#263730] dark:text-slate-300">
                                         {p.source}
                                       </span>
                                     </div>
-                                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                                      <span>Limite: <strong className="text-slate-800">{formatCurrency(p.targetPrice)}</strong></span>
+                                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-[#95a89f]">
+                                      <span>Limite: <strong className="text-slate-800 dark:text-[#e6ede9]">{formatCurrency(p.targetPrice)}</strong></span>
                                       {p.currentPrice !== null && p.currentPrice !== undefined && (
-                                        <span>Atual: <strong className={isDeal ? "text-emerald-700 font-bold" : "text-slate-700"}>{formatCurrency(p.currentPrice)}</strong></span>
+                                        <span>Atual: <strong className={isDeal ? "text-emerald-700 font-bold dark:text-[#67d9ae]" : "text-slate-700 dark:text-slate-300"}>{formatCurrency(p.currentPrice)}</strong></span>
                                       )}
                                       {p.lowestPrice !== null && p.lowestPrice !== undefined && (
-                                        <span className="text-[11px] text-slate-400">Menor: {formatCurrency(p.lowestPrice)}</span>
+                                        <span className="text-[11px] text-slate-400 dark:text-[#95a89f]/80">Menor: {formatCurrency(p.lowestPrice)}</span>
                                       )}
                                       {p.alerts?.map((alert) => (
-                                        <span key={alert.id} className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                        <span key={alert.id} className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-[#17382d] dark:text-[#67d9ae]">
                                           Alerta: atingiu {formatCurrency(alert.targetPrice)}
                                           <button type="button" onClick={() => void markPriceAlertRead(p.id, alert.id)} className="underline">Dispensar</button>
                                         </span>
                                       ))}
                                       {p.lastCheckError && (
-                                        <span className="basis-full rounded-lg bg-rose-50 px-3 py-2 text-[11px] font-medium leading-relaxed text-rose-700" role="status">
+                                        <span className="basis-full rounded-lg bg-rose-50 px-3 py-2 text-[11px] font-medium leading-relaxed text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" role="status">
                                           <strong>Consulta não concluída{p.lastAttemptedAt ? ` · ${new Date(p.lastAttemptedAt).toLocaleString("pt-BR")}` : ""}:</strong>{" "}
                                           {formatPriceCheckError(p.lastCheckError)}
                                         </span>
                                       )}
                                       {p.lastChecked && (
-                                        <span className="text-[10px] text-slate-400">Último preço válido: {new Date(p.lastChecked).toLocaleString("pt-BR")}</span>
+                                        <span className="text-[10px] text-slate-400 dark:text-[#95a89f]/80">Último preço válido: {new Date(p.lastChecked).toLocaleString("pt-BR")}</span>
                                       )}
                                     </div>
                                   </div>
@@ -1632,7 +1751,7 @@ export default function Dashboard() {
                                   <div className="flex items-center gap-2">
                                     {isDeal && !p.lastCheckError ? (
                                       <div className="flex items-center gap-2">
-                                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-800 flex items-center gap-1 dark:bg-[#17382d] dark:text-[#67d9ae]">
                                           🎯 Abaixo do limite!
                                         </span>
                                         {p.url && (
@@ -1640,14 +1759,14 @@ export default function Dashboard() {
                                             href={p.url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 flex items-center gap-1"
+                                            className="rounded-lg bg-[#00875f] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#015f43] flex items-center gap-1 dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
                                           >
                                             Comprar <ArrowUpRight size={12} />
                                           </a>
                                         )}
                                       </div>
                                     ) : (
-                                      <span className={`text-[11px] font-medium ${p.lastCheckError ? "text-rose-700" : "text-slate-400"}`}>
+                                      <span className={`text-[11px] font-medium ${p.lastCheckError ? "text-rose-700 dark:text-rose-400" : "text-slate-400 dark:text-[#95a89f]"}`}>
                                         {p.lastCheckError ? "Falha na consulta" : "Aguardando preço"}
                                       </span>
                                     )}
@@ -1656,7 +1775,7 @@ export default function Dashboard() {
                                       aria-label={"Excluir " + p.title}
                                       onClick={() => void handleDeleteProduct(p)}
                                       disabled={deletingProductId === p.id}
-                                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
                                     >
                                       <Trash2 size={13} />
                                       {deletingProductId === p.id ? "Excluindo..." : "Excluir"}
@@ -1674,36 +1793,39 @@ export default function Dashboard() {
               </div>
 
               {/* TAREFAS */}
-              <div className="space-y-6" id="tarefas">
+              <div className="space-y-6" id="tarefas" tabIndex={-1}>
                 <Card
                   title="Tarefas e Ações"
-                  icon={<Target size={19} className="text-indigo-600" />}
+                  icon={<Target size={19} className="text-[#00875f] dark:text-[#00b37e]" />}
                   action="+ Nova Tarefa"
-                  onActionClick={() => setNewTaskOpen((v) => !v)}
+                  onActionClick={() => {
+                    setNewTaskOpen((v) => !v);
+                    setTaskCreateError(null);
+                  }}
                 >
                   {/* Task Filter Tabs */}
-                  <div className="mb-3 flex items-center gap-1 border-b border-slate-100 pb-2 overflow-x-auto text-xs font-semibold">
+                  <div className="mb-3 flex items-center gap-1 border-b border-slate-100 pb-2 overflow-x-auto text-xs font-semibold dark:border-[#2e3f37]">
                     <button
                       onClick={() => setTaskTab("TODAS")}
-                      className={`rounded-lg px-2.5 py-1 ${taskTab === "TODAS" ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                      className={`rounded-lg px-2.5 py-1 ${taskTab === "TODAS" ? "bg-[#00875f] text-white dark:bg-[#00b37e] dark:text-[#00291d]" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                     >
                       Todas ({tasks.length})
                     </button>
                     <button
                       onClick={() => setTaskTab("HOJE")}
-                      className={`rounded-lg px-2.5 py-1 ${taskTab === "HOJE" ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                      className={`rounded-lg px-2.5 py-1 ${taskTab === "HOJE" ? "bg-[#00875f] text-white dark:bg-[#00b37e] dark:text-[#00291d]" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                     >
                       Hoje ({todayTasks.length})
                     </button>
                     <button
                       onClick={() => setTaskTab("ATRASADAS")}
-                      className={`rounded-lg px-2.5 py-1 ${taskTab === "ATRASADAS" ? "bg-red-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                      className={`rounded-lg px-2.5 py-1 ${taskTab === "ATRASADAS" ? "bg-red-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                     >
                       Atrasadas ({overdueTasks.length})
                     </button>
                     <button
                       onClick={() => setTaskTab("CONTAS")}
-                      className={`rounded-lg px-2.5 py-1 ${taskTab === "CONTAS" ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                      className={`rounded-lg px-2.5 py-1 ${taskTab === "CONTAS" ? "bg-[#00875f] text-white dark:bg-[#00b37e] dark:text-[#00291d]" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                     >
                       Contas ({billTasks.length})
                     </button>
@@ -1711,19 +1833,29 @@ export default function Dashboard() {
 
                   {/* Inline Task Creator */}
                   {newTaskOpen && (
-                    <form onSubmit={handleCreateTask} className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-2">
+                    <form onSubmit={handleCreateTask} className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 space-y-2 dark:border-[#2e3f37] dark:bg-[#1e2b26]/70">
+                      {taskCreateError && (
+                        <div role="alert" className="rounded-lg bg-rose-50 p-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                          {taskCreateError}
+                        </div>
+                      )}
                       <input
                         required
+                        disabled={taskCreateLoading}
                         placeholder="Nome da nova tarefa..."
                         value={newTaskTitle}
-                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400"
+                        onChange={(e) => {
+                          setNewTaskTitle(e.target.value);
+                          if (taskCreateError) setTaskCreateError(null);
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                       />
                       <div className="flex items-center gap-2">
                         <select
+                          disabled={taskCreateLoading}
                           value={newTaskPriority}
                           onChange={(e) => setNewTaskPriority(e.target.value as any)}
-                          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
                         >
                           <option value="Alta">Alta prioridade</option>
                           <option value="Média">Média prioridade</option>
@@ -1731,26 +1863,28 @@ export default function Dashboard() {
                         </select>
                         <input
                           type="date"
+                          disabled={taskCreateLoading}
                           value={newTaskDueDate}
                           onChange={(e) => setNewTaskDueDate(e.target.value)}
-                          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs"
+                          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
                         />
                         <button
                           type="submit"
-                          className="ml-auto rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                          disabled={taskCreateLoading}
+                          className="ml-auto rounded-xl bg-[#00875f] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#015f43] disabled:opacity-50 dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
                         >
-                          Salvar
+                          {taskCreateLoading ? "Salvando..." : "Salvar"}
                         </button>
                       </div>
                     </form>
                   )}
 
                   {/* Task list */}
-                  <div className="space-y-1 divide-y divide-slate-50">
+                  <div className="space-y-1 divide-y divide-slate-50 dark:divide-[#2e3f37]">
                     {loadingTasks ? (
-                      <p className="py-4 text-center text-xs text-slate-400">Carregando lista de tarefas...</p>
+                      <p className="py-4 text-center text-xs text-slate-400 dark:text-[#95a89f]">Carregando lista de tarefas...</p>
                     ) : filteredTasks.length === 0 ? (
-                      <p className="py-4 text-center text-xs text-slate-400">Nenhuma tarefa nesta categoria.</p>
+                      <p className="py-4 text-center text-xs text-slate-400 dark:text-[#95a89f]">Nenhuma tarefa nesta categoria.</p>
                     ) : (
                       filteredTasks.map((task) => (
                         <TaskRow
@@ -1769,16 +1903,16 @@ export default function Dashboard() {
                   </div>
                 </Card>
 
-                {/* E-MAILS COM FILTRO INTELIGENTE (Item 3 da visão de Fábio) */}
-                <div id="emails">
+                {/* E-MAILS COM FILTRO INTELIGENTE */}
+                <div id="emails" tabIndex={-1}>
                   <Card
                     title="Gmail com Filtro Inteligente"
-                    icon={<Mail size={19} className="text-purple-600" />}
+                    icon={<Mail size={19} className="text-purple-600 dark:text-purple-400" />}
                     action="Abrir Gmail"
                     actionHref="https://mail.google.com/mail/u/0/#inbox"
                   >
                     {/* Account filter tabs for Gmail */}
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5 dark:border-[#2e3f37]">
                       <div className="flex flex-wrap items-center gap-1 text-xs font-semibold">
                         <button
                           type="button"
@@ -1789,7 +1923,7 @@ export default function Dashboard() {
                           className={`rounded-lg px-2.5 py-1 transition ${
                             selectedGmailAccount === "all"
                               ? "bg-purple-600 text-white"
-                              : "text-slate-500 hover:bg-slate-100"
+                              : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"
                           }`}
                         >
                           Todas as contas (Consolidado)
@@ -1810,7 +1944,7 @@ export default function Dashboard() {
                                   ? isWork
                                     ? "bg-purple-700 text-white"
                                     : "bg-blue-600 text-white"
-                                  : "text-slate-500 hover:bg-slate-100"
+                                  : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"
                               }`}
                             >
                               <span
@@ -1827,41 +1961,41 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={() => setAccountsModalOpen(true)}
-                        className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-1 shrink-0"
+                        className="text-[11px] font-semibold text-purple-600 hover:underline inline-flex items-center gap-1 shrink-0 dark:text-purple-400"
                       >
                         <Plus size={13} /> Gerenciar contas
                       </button>
                     </div>
 
                     {/* Category tabs */}
-                    <div className="mb-3 flex items-center gap-1 border-b border-slate-100 pb-2 overflow-x-auto text-xs font-semibold">
+                    <div className="mb-3 flex items-center gap-1 border-b border-slate-100 pb-2 overflow-x-auto text-xs font-semibold dark:border-[#2e3f37]">
                       <button
                         onClick={() => setEmailTab("TODAS")}
-                        className={`rounded-lg px-2.5 py-1 ${emailTab === "TODAS" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                        className={`rounded-lg px-2.5 py-1 ${emailTab === "TODAS" ? "bg-slate-900 text-white dark:bg-[#00875f] dark:text-white" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                       >
                         Todas
                       </button>
                       <button
                         onClick={() => setEmailTab("RESPOND_TODAY")}
-                        className={`rounded-lg px-2.5 py-1 ${emailTab === "RESPOND_TODAY" ? "bg-red-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                        className={`rounded-lg px-2.5 py-1 ${emailTab === "RESPOND_TODAY" ? "bg-red-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                       >
                         🔴 Responder hoje ({categorizedEmails.RESPOND_TODAY.length})
                       </button>
                       <button
                         onClick={() => setEmailTab("FOLLOW_UP")}
-                        className={`rounded-lg px-2.5 py-1 ${emailTab === "FOLLOW_UP" ? "bg-amber-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                        className={`rounded-lg px-2.5 py-1 ${emailTab === "FOLLOW_UP" ? "bg-amber-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                       >
                         🟠 Acompanhar ({categorizedEmails.FOLLOW_UP.length})
                       </button>
                       <button
                         onClick={() => setEmailTab("INFORMATIVE")}
-                        className={`rounded-lg px-2.5 py-1 ${emailTab === "INFORMATIVE" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                        className={`rounded-lg px-2.5 py-1 ${emailTab === "INFORMATIVE" ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                       >
                         🔵 Informativo ({categorizedEmails.INFORMATIVE.length})
                       </button>
                       <button
                         onClick={() => setEmailTab("NOISE")}
-                        className={`rounded-lg px-2.5 py-1 ${emailTab === "NOISE" ? "bg-slate-500 text-white" : "text-slate-400 hover:bg-slate-100"}`}
+                        className={`rounded-lg px-2.5 py-1 ${emailTab === "NOISE" ? "bg-slate-500 text-white" : "text-slate-400 hover:bg-slate-100 dark:text-[#95a89f] dark:hover:bg-[#1e2b26]"}`}
                       >
                         ⚪ Ruído ({categorizedEmails.NOISE.length})
                       </button>
@@ -1869,9 +2003,20 @@ export default function Dashboard() {
 
                     <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
                       {gmailLoading ? (
-                        <p className="py-4 text-center text-xs text-slate-400">Carregando e classificando mensagens...</p>
+                        <p className="py-4 text-center text-xs text-slate-400 dark:text-[#95a89f]">Carregando e classificando mensagens...</p>
+                      ) : gmailError ? (
+                        <div className="py-6 text-center text-xs text-slate-500 dark:text-[#95a89f] space-y-1">
+                          <p>Conta Gmail não conectada ou autorização pendente.</p>
+                          <button
+                            type="button"
+                            onClick={() => setAccountsModalOpen(true)}
+                            className="text-xs font-semibold text-[#00875f] hover:underline dark:text-[#00b37e]"
+                          >
+                            Conectar ou autorizar conta Google
+                          </button>
+                        </div>
                       ) : displayedEmails.length === 0 ? (
-                        <p className="py-4 text-center text-xs text-slate-400">Nenhum e-mail nesta categoria.</p>
+                        <p className="py-4 text-center text-xs text-slate-400 dark:text-[#95a89f]">Nenhum e-mail nesta categoria.</p>
                       ) : (
                         displayedEmails.map((message) => {
                           const headers = message.payload?.headers ?? [];
@@ -1883,19 +2028,19 @@ export default function Dashboard() {
                           return (
                             <div
                               key={message.id}
-                              className="rounded-xl border border-slate-100 bg-white p-3 hover:bg-slate-50/70 transition"
+                              className="rounded-xl border border-slate-100 bg-white p-3 hover:bg-slate-50/70 transition dark:border-[#2e3f37] dark:bg-[#17211d] dark:hover:bg-[#1e2b26]"
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="truncate text-xs font-semibold text-slate-600 max-w-[150px] sm:max-w-[200px]">
+                                  <span className="truncate text-xs font-semibold text-slate-600 max-w-[150px] sm:max-w-[200px] dark:text-slate-300">
                                     {from}
                                   </span>
                                   {message.accountLabel && (
                                     <span
                                       className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold shrink-0 ${
                                         isWork
-                                          ? "bg-purple-100 text-purple-800 border border-purple-200"
-                                          : "bg-blue-100 text-blue-800 border border-blue-200"
+                                          ? "bg-purple-100 text-purple-800 border border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800/40"
+                                          : "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/40"
                                       }`}
                                       title={message.accountEmail}
                                     >
@@ -1904,39 +2049,39 @@ export default function Dashboard() {
                                   )}
                                 </div>
                                 {category === "RESPOND_TODAY" && (
-                                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 shrink-0">
+                                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 shrink-0 dark:bg-rose-950/60 dark:text-rose-300">
                                     Responder hoje
                                   </span>
                                 )}
                                 {category === "FOLLOW_UP" && (
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 shrink-0">
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 shrink-0 dark:bg-amber-950/60 dark:text-amber-300">
                                     Acompanhar
                                   </span>
                                 )}
                                 {category === "INFORMATIVE" && (
-                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 shrink-0">
+                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 shrink-0 dark:bg-blue-950/60 dark:text-blue-300">
                                     Informativo
                                   </span>
                                 )}
                                 {category === "NOISE" && (
-                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 shrink-0">
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 shrink-0 dark:bg-[#1e2b26] dark:text-[#95a89f]">
                                     Ruído / Promo
                                   </span>
                                 )}
                               </div>
-                              <p className="mt-1 text-xs font-semibold text-slate-800 line-clamp-1">{subject}</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-800 line-clamp-1 dark:text-[#e6ede9]">{subject}</p>
                               {message.snippet && (
-                                <p className="mt-1 text-[11px] text-slate-400 line-clamp-2">{message.snippet}</p>
+                                <p className="mt-1 text-[11px] text-slate-400 line-clamp-2 dark:text-[#95a89f]">{message.snippet}</p>
                               )}
                               {message.dashboardReason && (
-                                <p className="mt-1.5 text-[10px] text-indigo-600 italic">
+                                <p className="mt-1.5 text-[10px] text-[#00875f] italic dark:text-[#00b37e]">
                                   Motivo: {message.dashboardReason}
                                 </p>
                               )}
                               {(category === "RESPOND_TODAY" || category === "FOLLOW_UP") && (
                                 <div className="mt-2 flex items-center gap-2">
                                   {message.taskId ? (
-                                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-800 dark:bg-[#17382d] dark:text-[#67d9ae]">
                                       <Check size={12} /> Tarefa criada e salva
                                     </span>
                                   ) : (
@@ -1944,7 +2089,7 @@ export default function Dashboard() {
                                       type="button"
                                       disabled={creatingEmailTaskId === message.id}
                                       onClick={() => void handleCreateTaskFromEmail(message)}
-                                      className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                                      className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#67d9ae] dark:hover:bg-[#263730]"
                                     >
                                       {creatingEmailTaskId === message.id ? "Salvando…" : "Criar tarefa"}
                                     </button>
@@ -1956,24 +2101,24 @@ export default function Dashboard() {
                         })
                       )}
                     </div>
-                    {emailTaskError && <p role="alert" className="mt-2 text-xs text-red-600">{emailTaskError}</p>}
+                    {emailTaskError && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-rose-400">{emailTaskError}</p>}
                   </Card>
                 </div>
 
                 {/* Card de Progresso */}
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-[#2e3f37] dark:bg-[#17211d]">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-sm font-bold text-slate-800">Progresso do Dia</h2>
-                      <p className="text-xs text-slate-400">
+                      <h2 className="text-sm font-bold text-slate-800 dark:text-[#e6ede9]">Progresso do Dia</h2>
+                      <p className="text-xs text-slate-400 dark:text-[#95a89f]">
                         {done} de {tasks.length} tarefas concluídas
                       </p>
                     </div>
-                    <span className="text-xl font-extrabold text-indigo-600">{completionRate}%</span>
+                    <span className="text-xl font-extrabold text-[#00875f] dark:text-[#00b37e]">{completionRate}%</span>
                   </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1e2b26]">
                     <div
-                      className="h-full rounded-full bg-indigo-600 transition-all duration-500"
+                      className="h-full rounded-full bg-[#00875f] transition-all duration-500 dark:bg-[#00b37e]"
                       style={{ width: `${completionRate}%` }}
                     />
                   </div>
@@ -1982,7 +2127,7 @@ export default function Dashboard() {
             </div>
 
             {/* Footer */}
-            <footer className="mt-8 border-t border-slate-200 pt-5 text-center text-xs text-slate-400">
+            <footer className="mt-8 border-t border-slate-200 pt-5 text-center text-xs text-slate-400 dark:border-[#2e3f37] dark:text-[#95a89f]">
               Painel da Vida · Inteligência para Priorizar o seu Dia ·{" "}
               {databaseError ? "Modo demonstração com armazenamento local" : "Conectado ao PostgreSQL"}
             </footer>
@@ -1990,33 +2135,40 @@ export default function Dashboard() {
         </section>
       </div>
 
-      {/* MODAL DE PAGAMENTO RÁPIDO (1-click PIX e Código de Barras) */}
+      {/* MODAL DE PAGAMENTO RÁPIDO */}
       {activePaymentBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payment-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-[#2e3f37]">
               <div>
-                <h3 className="text-base font-bold text-slate-900">
+                <h3 id="payment-modal-title" className="text-base font-bold text-slate-900 dark:text-[#e6ede9]">
                   {activePaymentBill.merchant ?? activePaymentBill.subject}
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-[#95a89f]">
                   {activePaymentBill.dueDate
                     ? `Vence em ${new Date(activePaymentBill.dueDate).toLocaleDateString("pt-BR")}`
                     : "Vencimento não informado"}
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setActivePaymentBill(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Fechar modal de pagamento"
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-[#1e2b26] dark:hover:text-slate-200"
               >
                 <X size={20} />
               </button>
             </div>
 
             {activePaymentBill.amount !== null && (
-              <div className="rounded-xl bg-slate-50 p-3 text-center">
-                <span className="text-xs font-medium text-slate-500">Valor a pagar</span>
-                <p className="text-2xl font-black text-slate-900">
+              <div className="rounded-xl bg-slate-50 p-3 text-center dark:bg-[#1e2b26]">
+                <span className="text-xs font-medium text-slate-500 dark:text-[#95a89f]">Valor a pagar</span>
+                <p className="text-2xl font-black text-slate-900 dark:text-white">
                   R$ {activePaymentBill.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </p>
               </div>
@@ -2025,17 +2177,17 @@ export default function Dashboard() {
             {/* PIX Copia e Cola */}
             {activePaymentBill.pixCode ? (
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">PIX Copia e Cola:</label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">PIX Copia e Cola:</label>
                 <div className="flex items-center gap-2">
                   <input
                     readOnly
                     value={activePaymentBill.pixCode}
-                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-600 truncate"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-600 truncate dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-slate-300"
                   />
                   <button
                     type="button"
                     onClick={() => copyToClipboard(activePaymentBill.pixCode!, "pix")}
-                    className="flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 shrink-0"
+                    className="flex items-center gap-1 rounded-xl bg-[#00875f] px-3 py-2 text-xs font-semibold text-white hover:bg-[#015f43] shrink-0 dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
                   >
                     {copiedKey === "pix" ? <CheckCheck size={14} /> : <Copy size={14} />}
                     {copiedKey === "pix" ? "Copiado!" : "Copiar"}
@@ -2047,17 +2199,17 @@ export default function Dashboard() {
             {/* Código de barras / Linha Digitável */}
             {activePaymentBill.barcode ? (
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">Linha Digitável / Boleto:</label>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Linha Digitável / Boleto:</label>
                 <div className="flex items-center gap-2">
                   <input
                     readOnly
                     value={activePaymentBill.barcode}
-                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-600 truncate"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-600 truncate dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-slate-300"
                   />
                   <button
                     type="button"
                     onClick={() => copyToClipboard(activePaymentBill.barcode!, "barcode")}
-                    className="flex items-center gap-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 shrink-0"
+                    className="flex items-center gap-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 shrink-0 dark:bg-[#00875f] dark:hover:bg-[#015f43]"
                   >
                     {copiedKey === "barcode" ? <CheckCheck size={14} /> : <Copy size={14} />}
                     {copiedKey === "barcode" ? "Copiado!" : "Copiar"}
@@ -2066,13 +2218,13 @@ export default function Dashboard() {
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-[#2e3f37]">
               {activePaymentBill.paymentUrl ? (
                 <a
                   href={activePaymentBill.paymentUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 flex items-center gap-1"
+                  className="rounded-xl bg-[#00875f] px-4 py-2 text-xs font-semibold text-white hover:bg-[#015f43] flex items-center gap-1 dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
                 >
                   Abrir link de pagamento <ExternalLink size={13} />
                 </a>
@@ -2091,7 +2243,7 @@ export default function Dashboard() {
                   );
                   setActivePaymentBill(null);
                 }}
-                className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-[#264f40] dark:bg-[#17382d] dark:text-[#67d9ae]"
               >
                 Marcar como Paga ✓
               </button>
@@ -2125,7 +2277,7 @@ function Sidebar({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-slate-100 p-5">
+      <div className="border-b border-slate-100 p-5 dark:border-[#2e3f37]">
         <Logo />
       </div>
       <SidebarContent
@@ -2139,31 +2291,33 @@ function Sidebar({
 function SidebarContent({
   connectedAccounts = [],
   onOpenAccountsModal,
+  onNavigate,
 }: {
   connectedAccounts?: ConnectedAccountApi[];
   onOpenAccountsModal?: () => void;
+  onNavigate?: () => void;
 }) {
   return (
     <div className="flex flex-1 flex-col p-4">
-      <nav className="space-y-1">
-        <Nav icon={<LayoutDashboard size={18} />} label="Visão Geral" active targetId="" />
-        <Nav icon={<FileText size={18} />} label="Contas a Pagar" targetId="contas" />
-        <Nav icon={<CalendarDays size={18} />} label="Agenda" targetId="agenda" />
-        <Nav icon={<Target size={18} />} label="Tarefas" targetId="tarefas" />
-        <Nav icon={<Mail size={18} />} label="E-mails Filtrados" targetId="emails" />
-        <Nav icon={<ShoppingCart size={18} />} label="Preços & Compras" targetId="compras" />
+      <nav className="space-y-1" aria-label="Navegação das seções">
+        <Nav icon={<LayoutDashboard size={18} />} label="Visão Geral" active targetId="" onNavigate={onNavigate} />
+        <Nav icon={<FileText size={18} />} label="Contas a Pagar" targetId="contas" onNavigate={onNavigate} />
+        <Nav icon={<CalendarDays size={18} />} label="Agenda" targetId="agenda" onNavigate={onNavigate} />
+        <Nav icon={<Target size={18} />} label="Tarefas" targetId="tarefas" onNavigate={onNavigate} />
+        <Nav icon={<Mail size={18} />} label="E-mails Filtrados" targetId="emails" onNavigate={onNavigate} />
+        <Nav icon={<ShoppingCart size={18} />} label="Preços & Compras" targetId="compras" onNavigate={onNavigate} />
       </nav>
 
       <div className="mt-6">
         <div className="flex items-center justify-between px-3 mb-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-[#95a89f]">
             Contas Conectadas
           </p>
           {onOpenAccountsModal && (
             <button
               type="button"
               onClick={onOpenAccountsModal}
-              className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+              className="text-[10px] font-bold text-[#00875f] hover:underline cursor-pointer dark:text-[#00b37e]"
             >
               Gerenciar
             </button>
@@ -2179,7 +2333,7 @@ function SidebarContent({
                 <div
                   key={acc.id}
                   onClick={onOpenAccountsModal}
-                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-slate-50 cursor-pointer transition"
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left hover:bg-slate-50 cursor-pointer transition dark:hover:bg-[#1e2b26]"
                   title={`${acc.label ?? acc.email} (${acc.email})`}
                 >
                   <span
@@ -2188,10 +2342,10 @@ function SidebarContent({
                     }`}
                   />
                   <div className="min-w-0 flex-1">
-                    <span className="block text-xs font-semibold text-slate-700 truncate">
+                    <span className="block text-xs font-semibold text-slate-700 truncate dark:text-[#e6ede9]">
                       {acc.label || (isWork ? "Google — profissional" : "Google — pessoal")}
                     </span>
-                    <span className="block text-[10px] text-slate-400 truncate">
+                    <span className="block text-[10px] text-slate-400 truncate dark:text-[#95a89f]">
                       {acc.email}
                     </span>
                   </div>
@@ -2203,10 +2357,10 @@ function SidebarContent({
       </div>
 
       <div className="mt-auto pt-6">
-        <div className="rounded-2xl bg-indigo-900 p-4 text-white">
+        <div className="rounded-2xl bg-[#004d36] p-4 text-white border border-[#006648] dark:bg-[#17382d] dark:border-[#264f40]">
           <Sparkles size={16} />
           <p className="mt-2 text-xs font-bold">Painel Inteligente</p>
-          <p className="mt-1 text-[11px] leading-4 text-indigo-200">
+          <p className="mt-1 text-[11px] leading-4 text-emerald-100/90 dark:text-emerald-200/80">
             Filtrando ruídos e mantendo o que realmente importa diante de você.
           </p>
         </div>
@@ -2218,12 +2372,12 @@ function SidebarContent({
 function Logo() {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-xs">
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00875f] text-white shadow-xs dark:bg-[#00b37e] dark:text-[#00291d]">
         <Target size={19} />
       </div>
       <div>
-        <p className="text-sm font-bold text-slate-900">Painel da Vida</p>
-        <p className="text-[11px] text-slate-400">Filtro inteligente digital</p>
+        <p className="text-sm font-bold text-slate-900 dark:text-[#e6ede9]">Painel da Vida</p>
+        <p className="text-[11px] text-slate-400 dark:text-[#95a89f]">Filtro inteligente digital</p>
       </div>
     </div>
   );
@@ -2231,9 +2385,9 @@ function Logo() {
 
 function Stat({ value, label, color = "text-slate-900" }: { value: number; label: string; color?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-2xs">
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-2xs dark:border-[#2e3f37] dark:bg-[#17211d]">
       <div className={`text-lg font-bold ${color}`}>{value}</div>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-[#95a89f]">{label}</p>
     </div>
   );
 }
@@ -2254,11 +2408,11 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6 transition-colors dark:border-[#2e3f37] dark:bg-[#17211d]">
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5 text-slate-700">
+        <div className="flex items-center gap-2.5 text-slate-700 dark:text-[#c7d5cd]">
           {icon}
-          <h2 className="font-bold text-slate-900">{title}</h2>
+          <h2 className="font-bold text-slate-900 dark:text-[#e6ede9]">{title}</h2>
         </div>
         {action &&
           (actionHref ? (
@@ -2266,7 +2420,7 @@ function Card({
               href={actionHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+              className="flex items-center gap-1 text-xs font-semibold text-[#00875f] hover:underline dark:text-[#00b37e]"
             >
               {action}
               <ChevronRight size={14} />
@@ -2275,7 +2429,7 @@ function Card({
             <button
               type="button"
               onClick={onActionClick}
-              className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+              className="flex items-center gap-1 text-xs font-semibold text-[#00875f] hover:underline dark:text-[#00b37e]"
             >
               {action}
               <ChevronRight size={14} />
@@ -2297,22 +2451,25 @@ function TaskRow({
   onPayClick?: () => void;
 }) {
   return (
-    <div className="group flex items-center gap-3 rounded-xl px-2.5 py-2.5 hover:bg-slate-50 transition">
+    <div className="group flex items-center gap-3 rounded-xl px-2.5 py-2.5 hover:bg-slate-50 transition dark:hover:bg-[#1e2b26]/70">
       <button
+        type="button"
         onClick={toggle}
-        aria-label={task.completed ? "Reabrir tarefa" : "Concluir tarefa"}
+        aria-label={task.completed ? "Reabrir tarefa: " + task.title : "Concluir tarefa: " + task.title}
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
-          task.completed ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white hover:border-indigo-400"
+          task.completed
+            ? "border-[#00875f] bg-[#00875f] text-white dark:border-[#00b37e] dark:bg-[#00b37e] dark:text-[#00291d]"
+            : "border-slate-300 bg-white hover:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:hover:border-[#00b37e]"
         }`}
       >
         {task.completed && <Check size={13} />}
       </button>
 
       <div className="min-w-0 flex-1">
-        <p className={`truncate text-xs sm:text-sm font-medium ${task.completed ? "text-slate-400 line-through" : "text-slate-800"}`}>
+        <p className={`truncate text-xs sm:text-sm font-medium ${task.completed ? "text-slate-400 line-through dark:text-[#5e6f66]" : "text-slate-800 dark:text-[#e6ede9]"}`}>
           {task.title}
         </p>
-        <p className="truncate text-[11px] text-slate-400">
+        <p className="truncate text-[11px] text-slate-400 dark:text-[#95a89f]">
           {task.bill ? `Conta a pagar · ${task.bill.merchant ?? "Boleto"}` : task.description}
         </p>
       </div>
@@ -2320,10 +2477,10 @@ function TaskRow({
       <span
         className={`hidden rounded-md px-2 py-0.5 text-[10px] font-bold sm:block ${
           task.priority === "Alta"
-            ? "bg-red-50 text-red-600"
+            ? "bg-red-50 text-red-600 dark:bg-rose-950/60 dark:text-rose-300"
             : task.priority === "Média"
-              ? "bg-amber-50 text-amber-700"
-              : "bg-slate-100 text-slate-600"
+              ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+              : "bg-slate-100 text-slate-600 dark:bg-[#263730] dark:text-slate-300"
         }`}
       >
         {task.priority}
@@ -2333,13 +2490,13 @@ function TaskRow({
         <button
           type="button"
           onClick={onPayClick}
-          className="rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700 shrink-0 flex items-center gap-1"
+          className="rounded-lg bg-[#00875f] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#015f43] shrink-0 flex items-center gap-1 dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
         >
           <CreditCard size={12} /> Pagar
         </button>
       )}
 
-      <span className={`w-14 text-right text-xs font-medium shrink-0 ${task.due === "Hoje" ? "text-indigo-600 font-bold" : "text-slate-400"}`}>
+      <span className={`w-14 text-right text-xs font-medium shrink-0 ${task.due === "Hoje" ? "text-[#00875f] dark:text-[#00b37e] font-bold" : "text-slate-400 dark:text-[#95a89f]"}`}>
         {task.due}
       </span>
     </div>
@@ -2387,31 +2544,33 @@ function BillRow({
   return (
     <div
       className={`rounded-xl border p-3 transition ${
-        overdue ? "border-red-200 bg-red-50/40" : "border-slate-100 bg-white hover:bg-slate-50/50"
+        overdue
+          ? "border-red-200 bg-red-50/40 dark:border-rose-900/40 dark:bg-rose-950/25"
+          : "border-slate-100 bg-white hover:bg-slate-50/50 dark:border-[#2e3f37] dark:bg-[#17211d] dark:hover:bg-[#1e2b26]/60"
       }`}
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-slate-900">{bill.merchant ?? bill.subject}</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-[#e6ede9]">{bill.merchant ?? bill.subject}</p>
             {overdue && (
-              <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+              <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:bg-rose-950/60 dark:text-rose-300">
                 Vencida
               </span>
             )}
           </div>
-          <p className="truncate text-xs text-slate-400">{bill.sender}</p>
+          <p className="truncate text-xs text-slate-400 dark:text-[#95a89f]">{bill.sender}</p>
 
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-            <span className={overdue ? "font-bold text-red-600" : "text-slate-600"}>
+            <span className={overdue ? "font-bold text-red-600 dark:text-rose-400" : "text-slate-600 dark:text-slate-300"}>
               {due ? `Vencimento: ${due.toLocaleDateString("pt-BR")}` : "Vencimento não identificado"}
             </span>
             {bill.amount !== null && (
-              <span className="font-extrabold text-slate-900">
+              <span className="font-extrabold text-slate-900 dark:text-white">
                 R$ {bill.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </span>
             )}
-            <span className="text-slate-500 font-medium">
+            <span className="text-slate-500 font-medium dark:text-[#95a89f]">
               {bill.responsibleType === "ME"
                 ? "Em seu nome"
                 : bill.responsiblePerson
@@ -2432,7 +2591,7 @@ function BillRow({
               responsibleType: e.target.value === "__me__" ? "ME" : e.target.value ? "OTHER" : "UNKNOWN",
             })
           }
-          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700"
+          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9]"
         >
           <option value="">Quem paga?</option>
           <option value="__me__">Eu (Fábio)</option>
@@ -2448,7 +2607,7 @@ function BillRow({
         <select
           value={bill.paymentAccount?.id ?? ""}
           onChange={(e) => void update({ paymentAccountId: e.target.value || null })}
-          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700"
+          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9]"
         >
           <option value="">Conta de saída</option>
           {accounts.map((account) => (
@@ -2462,7 +2621,7 @@ function BillRow({
         <select
           value={bill.status}
           onChange={(e) => void update({ status: e.target.value as BillApi["status"] })}
-          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700"
+          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9]"
         >
           <option value="NEEDS_REVIEW">Revisar</option>
           <option value="CONFIRMED">Confirmada</option>
@@ -2474,7 +2633,7 @@ function BillRow({
         <button
           type="button"
           onClick={onPayClick}
-          className="rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 flex items-center gap-1 shrink-0"
+          className="rounded-xl bg-[#00875f] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#015f43] flex items-center gap-1 shrink-0 dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
         >
           <CreditCard size={13} /> Pagar
         </button>
@@ -2488,24 +2647,33 @@ function Nav({
   label,
   active = false,
   targetId,
+  onNavigate,
 }: {
   icon: React.ReactNode;
   label: string;
   active?: boolean;
   targetId?: string;
+  onNavigate?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={() => {
         if (targetId) {
-          document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          const el = document.getElementById(targetId);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+            el.focus?.();
+          }
         } else {
           window.scrollTo({ top: 0, behavior: "smooth" });
         }
+        onNavigate?.();
       }}
       className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-medium transition ${
-        active ? "bg-indigo-50 text-indigo-700 font-bold" : "text-slate-600 hover:bg-slate-50"
+        active
+          ? "bg-emerald-50 text-emerald-800 font-bold dark:bg-[#17382d] dark:text-[#67d9ae]"
+          : "text-slate-600 hover:bg-slate-50 dark:text-[#95a89f] dark:hover:bg-[#1e2b26] dark:hover:text-[#e6ede9]"
       }`}
     >
       {icon}
@@ -2527,8 +2695,8 @@ function Connection({
     <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left">
       <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
       <div>
-        <span className="block text-xs font-medium text-slate-700">{label}</span>
-        <span className="block text-[10px] text-slate-400">{status}</span>
+        <span className="block text-xs font-medium text-slate-700 dark:text-slate-300">{label}</span>
+        <span className="block text-[10px] text-slate-400 dark:text-[#95a89f]">{status}</span>
       </div>
     </div>
   );
@@ -2544,11 +2712,11 @@ function NotificationItem({
   badge?: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-xl p-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+    <div className="flex items-center gap-2.5 rounded-xl p-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:text-[#c7d5cd] dark:hover:bg-[#1e2b26]">
       {icon && <div className="shrink-0">{icon}</div>}
       <span className="flex-1">{title}</span>
       {badge && (
-        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700">
+        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700 dark:bg-rose-950/60 dark:text-rose-300">
           {badge}
         </span>
       )}
