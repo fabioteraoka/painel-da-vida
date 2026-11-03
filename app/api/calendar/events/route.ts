@@ -186,6 +186,8 @@ export async function GET(req: NextRequest) {
     });
 
     const consolidatedItems: Array<any> = [];
+    const accountErrors: Array<{ email: string; error: string }> = [];
+    let successfulCount = 0;
 
     for (const account of targetAccounts) {
       try {
@@ -196,6 +198,7 @@ export async function GET(req: NextRequest) {
         );
 
         if (response.ok) {
+          successfulCount++;
           const data = (await response.json()) as { items?: any[] };
           const items = (data.items ?? []).map((item) => ({
             ...item,
@@ -207,11 +210,35 @@ export async function GET(req: NextRequest) {
           }));
           consolidatedItems.push(...items);
         } else {
-          console.error(`Google Calendar API failed for ${account.email}:`, await response.text());
+          accountErrors.push({
+            email: account.email,
+            error:
+              response.status === 401
+                ? "Token expirado ou não autorizado no Calendar."
+                : response.status === 403
+                  ? "Permissão do Google Calendar não concedida."
+                  : `Falha na API do Google Calendar (${response.status})`,
+          });
         }
-      } catch (err) {
-        console.error(`Failed to fetch calendar for ${account.email}:`, err);
+      } catch {
+        accountErrors.push({
+          email: account.email,
+          error: "Falha na renovação do token ou conexão com o Calendar.",
+        });
       }
+    }
+
+    if (successfulCount === 0 && targetAccounts.length > 0) {
+      return NextResponse.json(
+        {
+          connected: false,
+          error: "Não foi possível carregar os eventos das contas Google selecionadas.",
+          accounts: allAccounts.map(toSafeAccount),
+          items: [],
+          accountErrors,
+        },
+        { status: 502 },
+      );
     }
 
     // Sort all consolidated events chronologically
@@ -225,6 +252,7 @@ export async function GET(req: NextRequest) {
       connected: true,
       accounts: allAccounts.map(toSafeAccount),
       items: consolidatedItems,
+      partialErrors: accountErrors.length > 0 ? accountErrors : undefined,
     });
   } catch (error) {
     console.error("Calendar GET failed:", error);

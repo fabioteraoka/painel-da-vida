@@ -130,62 +130,100 @@ async function fetchAndClassifyMessages(
   token: string,
   accountInfo: { id: string; email: string; label: string; accountType: string },
   includeNoise = false,
-) {
-  const listResponse = await fetch(
-    "https://gmail.googleapis.com/gmail/v1/users/me/messages?" +
-      new URLSearchParams({ maxResults: "25", q: "newer_than:7d" }),
-    { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
-  );
+): Promise<{
+  messages: any[];
+  error?: "auth_error" | "permission_error" | "api_error";
+  errorMessage?: string;
+}> {
+  try {
+    const listResponse = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?" +
+        new URLSearchParams({ maxResults: "25", q: "newer_than:7d" }),
+      { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
+    );
 
-  if (!listResponse.ok) {
-    throw new Error(`Não foi possível consultar o Gmail para a conta ${accountInfo.email}.`);
-  }
-
-  const list = (await listResponse.json()) as { messages?: { id: string; threadId: string }[] };
-  const items = await Promise.all(
-    (list.messages ?? []).slice(0, 15).map(async (message) => {
-      const detailResponse = await fetch(
-        "https://gmail.googleapis.com/gmail/v1/users/me/messages/" +
-          message.id +
-          "?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date",
-        { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
-      );
-      if (!detailResponse.ok) return null;
-      const detail = (await detailResponse.json()) as {
-        id: string;
-        threadId?: string;
-        snippet?: string;
-        internalDate?: string;
-        labelIds?: string[];
-        payload?: { headers?: { name: string; value: string }[] };
-      };
-
-      const header = (name: string) =>
-        detail.payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
-
-      const classification = await classifyDashboardEmail({
-        from: header("From"),
-        subject: header("Subject"),
-        snippet: detail.snippet ?? "",
-      });
-
-      if (!includeNoise && classification.category === "NOISE") {
-        return null;
+    if (!listResponse.ok) {
+      if (listResponse.status === 401) {
+        return {
+          messages: [],
+          error: "auth_error",
+          errorMessage: "Token de acesso do Gmail expirado ou não autorizado.",
+        };
       }
-
+      if (listResponse.status === 403) {
+        return {
+          messages: [],
+          error: "permission_error",
+          errorMessage: "Permissão de leitura do Gmail não concedida para esta conta.",
+        };
+      }
       return {
-        ...detail,
-        connectedAccountId: accountInfo.id,
-        accountEmail: accountInfo.email,
-        accountLabel: accountInfo.label,
-        accountType: accountInfo.accountType,
-        dashboardCategory: classification.category,
-        dashboardReason: classification.reason,
+        messages: [],
+        error: "api_error",
+        errorMessage: `Erro ao consultar API do Gmail (código HTTP ${listResponse.status}).`,
       };
-    }),
-  );
+    }
 
-  return items.filter(Boolean);
+    const list = (await listResponse.json()) as { messages?: { id: string; threadId: string }[] };
+    if (!list.messages || list.messages.length === 0) {
+      return { messages: [] };
+    }
+
+    const items = await Promise.all(
+      list.messages.slice(0, 15).map(async (message) => {
+        try {
+          const detailResponse = await fetch(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/" +
+              message.id +
+              "?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date",
+            { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
+          );
+          if (!detailResponse.ok) return null;
+          const detail = (await detailResponse.json()) as {
+            id: string;
+            threadId?: string;
+            snippet?: string;
+            internalDate?: string;
+            labelIds?: string[];
+            payload?: { headers?: { name: string; value: string }[] };
+          };
+
+          const header = (name: string) =>
+            detail.payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+
+          const classification = await classifyDashboardEmail({
+            from: header("From"),
+            subject: header("Subject"),
+            snippet: detail.snippet ?? "",
+          });
+
+          if (!includeNoise && classification.category === "NOISE") {
+            return null;
+          }
+
+          return {
+            ...detail,
+            connectedAccountId: accountInfo.id,
+            accountEmail: accountInfo.email,
+            accountLabel: accountInfo.label,
+            accountType: accountInfo.accountType,
+            dashboardCategory: classification.category,
+            dashboardReason: classification.reason,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    return { messages: items.filter(Boolean) };
+  } catch (err: any) {
+    return {
+      messages: [],
+      error: "api_error",
+      errorMessage: "Falha de comunicação ao conectar com a API do Gmail.",
+    };
+  }
 }
 
 async function attachTaskLinks(userId: string, messages: Array<{ id: string; [key: string]: any }>) {
@@ -237,15 +275,22 @@ export async function GET(req: NextRequest) {
         ? activeAccounts.filter((a) => a.id === requestedAccountId)
         : activeAccounts;
 
-    // If no active accounts are connected
+    // Se não houver contas conectadas ativas
     if (targetAccounts.length === 0) {
       if (!isDemoMode) {
-        return NextResponse.json({
-          connected: false,
-          accounts: allAccounts.map(toSafeAccount),
-          messages: [],
-          error: "Nenhuma conta Google conectada para consultar o Gmail.",
-        }, { status: 409 });
+        const hasAnyAccount = allAccounts.length > 0;
+        return NextResponse.json(
+          {
+            connected: false,
+            reason: hasAnyAccount ? "accounts_need_reconnect" : "no_accounts",
+            error: hasAnyAccount
+              ? "As contas Google conectadas estão desconectadas ou requerem reconexão."
+              : "Nenhuma conta Google conectada para consultar o Gmail.",
+            accounts: allAccounts.map(toSafeAccount),
+            messages: [],
+          },
+          { status: 409 },
+        );
       }
 
       // Simulated Demo Fixtures with personal and work accounts consolidated
@@ -410,23 +455,102 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Real API call across all targeted connected accounts
+    // Consulta real em cada conta externa configurada
     const allMessages: Array<any> = [];
+    const accountResults: Array<{
+      id: string;
+      email: string;
+      status: "success" | "auth_error" | "permission_error" | "api_error";
+      errorMessage?: string;
+    }> = [];
 
     for (const account of targetAccounts) {
+      const accountInfo = {
+        id: account.id,
+        email: account.email,
+        label: account.label ?? (account.accountType === "WORK" ? "Profissional" : "Pessoal"),
+        accountType: account.accountType,
+      };
+
+      let token: string;
       try {
-        const token = await getValidAccessToken(account);
-        const accountInfo = {
+        token = await getValidAccessToken(account);
+      } catch (tokenErr: any) {
+        console.error(`[Gmail] Falha na obtenção do token para ${account.email}:`, tokenErr?.message);
+        accountResults.push({
           id: account.id,
           email: account.email,
-          label: account.label ?? (account.accountType === "WORK" ? "Profissional" : "Pessoal"),
-          accountType: account.accountType,
-        };
-        const messages = await fetchAndClassifyMessages(token, accountInfo, includeNoise);
-        allMessages.push(...messages);
-      } catch (err) {
-        console.error(`Error loading Gmail for account ${account.email}:`, err);
+          status: "auth_error",
+          errorMessage: "Falha na renovação da credencial OAuth. A conta necessita de reconexão.",
+        });
+        continue;
       }
+
+      const fetchResult = await fetchAndClassifyMessages(token, accountInfo, includeNoise);
+      if (fetchResult.error) {
+        accountResults.push({
+          id: account.id,
+          email: account.email,
+          status: fetchResult.error,
+          errorMessage: fetchResult.errorMessage,
+        });
+      } else {
+        accountResults.push({
+          id: account.id,
+          email: account.email,
+          status: "success",
+        });
+        allMessages.push(...fetchResult.messages);
+      }
+    }
+
+    const successfulAccounts = accountResults.filter((r) => r.status === "success");
+    const failedAccounts = accountResults.filter((r) => r.status !== "success");
+
+    // Diagnóstico criterioso: Se nenhuma conta obteve sucesso na consulta
+    if (successfulAccounts.length === 0) {
+      const hasAuthError = failedAccounts.some((r) => r.status === "auth_error");
+      const hasPermissionError = failedAccounts.some((r) => r.status === "permission_error");
+
+      if (hasPermissionError) {
+        return NextResponse.json(
+          {
+            connected: false,
+            errorType: "insufficient_permissions",
+            error: "Permissão de leitura do Gmail não concedida na conta Google. Reconecte e autorize o escopo solicitado.",
+            accounts: allAccounts.map(toSafeAccount),
+            messages: [],
+            accountErrors: failedAccounts.map((a) => ({ email: a.email, error: a.errorMessage })),
+          },
+          { status: 403 },
+        );
+      }
+
+      if (hasAuthError) {
+        return NextResponse.json(
+          {
+            connected: false,
+            errorType: "auth_failed",
+            error: "Autenticação expirada ou token revogado no Google. Reconecte a conta.",
+            accounts: allAccounts.map(toSafeAccount),
+            messages: [],
+            accountErrors: failedAccounts.map((a) => ({ email: a.email, error: a.errorMessage })),
+          },
+          { status: 401 },
+        );
+      }
+
+      return NextResponse.json(
+        {
+          connected: false,
+          errorType: "query_failed",
+          error: "Não foi possível carregar as mensagens das contas Google selecionadas.",
+          accounts: allAccounts.map(toSafeAccount),
+          messages: [],
+          accountErrors: failedAccounts.map((a) => ({ email: a.email, error: a.errorMessage })),
+        },
+        { status: 502 },
+      );
     }
 
     // Sort consolidated messages by date desc
@@ -442,6 +566,10 @@ export async function GET(req: NextRequest) {
       connected: true,
       accounts: allAccounts.map(toSafeAccount),
       messages: messagesWithTasks,
+      partialErrors:
+        failedAccounts.length > 0
+          ? failedAccounts.map((a) => ({ email: a.email, error: a.errorMessage }))
+          : undefined,
     });
   } catch (error) {
     console.error("Gmail GET failed:", error);

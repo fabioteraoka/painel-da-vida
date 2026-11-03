@@ -369,7 +369,7 @@ export function ConnectedAccountsModal({
               </p>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               {isDemoMode && (
                 <button
                   type="button"
@@ -381,10 +381,17 @@ export function ConnectedAccountsModal({
               )}
 
               <a
-                href="/api/integrations/google/connect?type=work"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition"
+                href="/api/integrations/google/connect?type=PERSONAL"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs hover:bg-indigo-50 transition"
               >
-                <Plus size={15} /> Adicionar Conta Google (OAuth)
+                <Plus size={14} /> Google Pessoal
+              </a>
+
+              <a
+                href="/api/integrations/google/connect?type=WORK"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-indigo-700 transition"
+              >
+                <Plus size={14} /> Google Profissional
               </a>
             </div>
           </div>

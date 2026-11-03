@@ -3,7 +3,11 @@ import { cookies } from "next/headers";
 import crypto from "node:crypto";
 import { auth } from "@/auth";
 import { prisma, isDemoMode } from "@/lib/prisma";
-import { upsertConnectedAccount, ConnectedAccountType } from "@/lib/connected-accounts";
+import {
+  upsertConnectedAccount,
+  ConnectedAccountType,
+  normalizeAccountType,
+} from "@/lib/connected-accounts";
 
 type GoogleIntegration = "calendar" | "gmail" | "google";
 
@@ -47,13 +51,13 @@ export function getGoogleOAuthCredentials(): { clientId: string; clientSecret: s
   return { clientId, clientSecret };
 }
 
-function callbackUrl(request: Request, integration: GoogleIntegration) {
+export function callbackUrl(request: Request, integration: GoogleIntegration) {
   const path =
     integration === "calendar"
-      ? "/api/auth/callback/google-calendar"
+      ? "/api/integrations/google-calendar/callback"
       : integration === "gmail"
-        ? "/api/auth/callback/google-gmail"
-        : "/api/auth/callback/google";
+        ? "/api/integrations/google-gmail/callback"
+        : "/api/integrations/google/callback";
 
   return new URL(path, request.url).toString();
 }
@@ -225,7 +229,8 @@ export async function startGoogleIntegration(
   }
 
   const reqUrl = new URL(request.url);
-  const accountTypeParam = reqUrl.searchParams.get("type") as ConnectedAccountType | null;
+  const rawType = reqUrl.searchParams.get("type");
+  const accountTypeParam = rawType ? normalizeAccountType(rawType) : null;
 
   let credentials: { clientId: string; clientSecret: string } | null = null;
   try {
@@ -338,9 +343,8 @@ export async function finishGoogleIntegration(
 
   const cookieStore = await cookies();
   const expectedNonce = cookieStore.get(stateCookie)?.value;
-  const cookieAccountType = cookieStore.get("google_oauth_account_type")?.value as
-    | ConnectedAccountType
-    | undefined;
+  const rawCookieAccountType = cookieStore.get("google_oauth_account_type")?.value;
+  const cookieAccountType = rawCookieAccountType ? normalizeAccountType(rawCookieAccountType) : null;
 
   // Validação estrita de CSRF: State assinado + Nonce imprevisível + Expiração + Vínculo de Sessão + Consumo Único via PostgreSQL
   const isStateValid = await verifySignedOAuthState(state, expectedNonce, session.user.email, integration);
@@ -425,22 +429,32 @@ export async function finishGoogleIntegration(
   const isGmail = googleUser.email.toLowerCase().endsWith("@gmail.com");
   const accountType: ConnectedAccountType =
     cookieAccountType || (isGmail ? "PERSONAL" : "WORK");
-  const label = isGmail ? "Google — pessoal" : "Google — profissional";
+  const label =
+    accountType === "WORK"
+      ? "Google — profissional"
+      : isGmail
+        ? "Google — pessoal"
+        : "Google — secundária";
 
-  // Upsert into ConnectedAccount architecture (preserving existing refreshToken if omitted)
-  await upsertConnectedAccount({
-    userId: dbUser.id,
-    provider: "GOOGLE",
-    email: googleUser.email,
-    externalUserId: googleUser.sub ?? null,
-    name: googleUser.name ?? googleUser.email,
-    label,
-    accountType,
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-    scopes: tokens.scope,
-  });
+  // Upsert into ConnectedAccount architecture with safe try/catch
+  try {
+    await upsertConnectedAccount({
+      userId: dbUser.id,
+      provider: "GOOGLE",
+      email: googleUser.email,
+      externalUserId: googleUser.sub ?? null,
+      name: googleUser.name ?? googleUser.email,
+      label,
+      accountType,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      scopes: tokens.scope,
+    });
+  } catch (persistErr: any) {
+    console.error(`[OAuth] Falha ao persistir conta conectada para ${googleUser.email}:`, persistErr?.message || persistErr);
+    return integrationError(request, integration, "persistence_failed");
+  }
 
   const target = new URL("/", request.url);
   target.searchParams.set("integration", "google");

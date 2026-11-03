@@ -5,6 +5,18 @@ export type AccountProvider = "GOOGLE" | "MICROSOFT";
 export type ConnectedAccountType = "PERSONAL" | "WORK" | "OTHER";
 export type ConnectionStatus = "CONNECTED" | "DISCONNECTED" | "ERROR" | "EXPIRED";
 
+export function normalizeAccountType(typeInput?: string | null): ConnectedAccountType {
+  if (!typeInput) return "PERSONAL";
+  const upper = String(typeInput).trim().toUpperCase();
+  if (upper === "WORK" || upper === "PROFESSIONAL" || upper === "TRABALHO") {
+    return "WORK";
+  }
+  if (upper === "OTHER" || upper === "OUTRO") {
+    return "OTHER";
+  }
+  return "PERSONAL";
+}
+
 export interface SafeConnectedAccount {
   id: string;
   userId: string;
@@ -15,6 +27,7 @@ export interface SafeConnectedAccount {
   label: string | null;
   accountType: ConnectedAccountType;
   status: ConnectionStatus;
+  errorMessage?: string | null;
   lastSyncAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +63,7 @@ export function toSafeAccount(acc: any): SafeConnectedAccount {
     label: acc.label ?? null,
     accountType: (acc.accountType as ConnectedAccountType) ?? "PERSONAL",
     status: (acc.status as ConnectionStatus) ?? "CONNECTED",
+    errorMessage: acc.errorMessage ?? null,
     lastSyncAt: acc.lastSyncAt ? new Date(acc.lastSyncAt).toISOString() : null,
     createdAt: acc.createdAt ? new Date(acc.createdAt).toISOString() : new Date().toISOString(),
     updatedAt: acc.updatedAt ? new Date(acc.updatedAt).toISOString() : new Date().toISOString(),
@@ -194,7 +208,7 @@ export async function upsertConnectedAccount(data: {
   externalUserId?: string | null;
   name?: string | null;
   label?: string | null;
-  accountType?: ConnectedAccountType;
+  accountType?: ConnectedAccountType | string;
   accessToken: string;
   refreshToken?: string | null;
   expiresIn?: number | null;
@@ -213,18 +227,18 @@ export async function upsertConnectedAccount(data: {
     },
   });
 
-  const existingRefreshToken = existing ? decryptToken(existing.refreshToken) : null;
+  const existingRefreshToken = existing ? (decryptToken(existing.refreshToken) ?? existing.refreshToken) : null;
   const finalRefreshToken = data.refreshToken || existingRefreshToken || null;
+
+  const defaultType: ConnectedAccountType = data.accountType
+    ? normalizeAccountType(data.accountType)
+    : data.email.toLowerCase().endsWith("@gmail.com")
+      ? "PERSONAL"
+      : "WORK";
 
   const defaultLabel =
     data.label ||
-    (data.email.toLowerCase().endsWith("@gmail.com")
-      ? "Google — pessoal"
-      : "Google — profissional");
-
-  const defaultType: ConnectedAccountType =
-    data.accountType ||
-    (data.email.toLowerCase().endsWith("@gmail.com") ? "PERSONAL" : "WORK");
+    (defaultType === "WORK" ? "Google — profissional" : "Google — pessoal");
 
   const record = await (prisma as any).connectedAccount.upsert({
     where: {
@@ -237,10 +251,13 @@ export async function upsertConnectedAccount(data: {
     update: {
       externalUserId: data.externalUserId ?? existing?.externalUserId ?? null,
       name: data.name ?? existing?.name ?? null,
+      accountType: defaultType,
+      label: data.label ?? existing?.label ?? defaultLabel,
       accessToken: encryptToken(data.accessToken),
       refreshToken: encryptToken(finalRefreshToken),
       expiresAt,
       status: "CONNECTED",
+      errorMessage: null,
       scopes: data.scopes ?? existing?.scopes ?? null,
       lastSyncAt: new Date(),
     },
@@ -256,6 +273,7 @@ export async function upsertConnectedAccount(data: {
       refreshToken: encryptToken(finalRefreshToken),
       expiresAt,
       status: "CONNECTED",
+      errorMessage: null,
       scopes: data.scopes ?? null,
       lastSyncAt: new Date(),
     },
@@ -299,10 +317,15 @@ export async function upsertConnectedAccount(data: {
  * Refresh OAuth token for a specific account independently.
  */
 export async function refreshAccountToken(account: ConnectedAccountData): Promise<string> {
-  if (!account.refreshToken) {
+  const rawRefreshToken = decryptToken(account.refreshToken) ?? account.refreshToken;
+
+  if (!rawRefreshToken) {
     await (prisma as any).connectedAccount.update({
       where: { id: account.id },
-      data: { status: "EXPIRED" },
+      data: {
+        status: "EXPIRED",
+        errorMessage: "Conta sem refresh token. Reconecte a conta para conceder acesso offline.",
+      },
     });
     throw new Error(`Conta ${account.email} necessita de reconexão (sem refresh token).`);
   }
@@ -318,35 +341,71 @@ export async function refreshAccountToken(account: ConnectedAccountData): Promis
       throw new Error("Credenciais do Google não configuradas.");
     }
 
-    const response = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        refresh_token: account.refreshToken,
-        grant_type: "refresh_token",
-      }),
-    });
-
-    if (!response.ok) {
-      await (prisma as any).connectedAccount.update({
-        where: { id: account.id },
-        data: { status: "ERROR" },
+    let response: Response;
+    try {
+      response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: rawRefreshToken,
+          grant_type: "refresh_token",
+        }),
       });
-      throw new Error(`Falha ao renovar credencial da conta ${account.email}`);
+    } catch (networkErr: any) {
+      throw new Error(`Falha de conexão ao renovar token da conta ${account.email}: ${networkErr?.message || "erro de rede"}`);
     }
 
-    const data = (await response.json()) as { access_token: string; expires_in?: number };
+    if (!response.ok) {
+      let errorCategory: ConnectionStatus = "ERROR";
+      let errorDesc = "Falha ao renovar credencial da conta.";
+
+      try {
+        const errJson = (await response.json()) as { error?: string; error_description?: string };
+        if (errJson.error === "invalid_grant") {
+          errorCategory = "EXPIRED";
+          errorDesc = "Acesso revogado ou expirado no Google. Reconecte a conta.";
+        } else if (errJson.error === "unauthorized_client" || errJson.error === "invalid_client") {
+          errorDesc = "Credenciais do aplicativo Google OAuth inválidas.";
+        }
+      } catch {
+        // Ignora erro de parse
+      }
+
+      await (prisma as any).connectedAccount.update({
+        where: { id: account.id },
+        data: {
+          status: errorCategory,
+          errorMessage: errorDesc,
+        },
+      });
+
+      throw new Error(`Conta ${account.email}: ${errorDesc}`);
+    }
+
+    const data = (await response.json()) as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in?: number;
+      scope?: string;
+    };
     const expiresAt = new Date(Date.now() + (data.expires_in ?? 3600) * 1000);
+
+    // Se o Google devolveu um novo refresh token, cifra e atualiza.
+    // Se não devolveu, preserva o refresh token existente.
+    const finalRefreshToken = data.refresh_token ? encryptToken(data.refresh_token) : account.refreshToken;
 
     await (prisma as any).connectedAccount.update({
       where: { id: account.id },
       data: {
         accessToken: encryptToken(data.access_token),
+        refreshToken: finalRefreshToken,
         expiresAt,
         status: "CONNECTED",
+        errorMessage: null,
         lastSyncAt: new Date(),
+        ...(data.scope ? { scopes: data.scope } : {}),
       },
     });
 
@@ -361,8 +420,10 @@ export async function refreshAccountToken(account: ConnectedAccountData): Promis
  */
 export async function getValidAccessToken(account: ConnectedAccountData): Promise<string> {
   const isExpiring = !account.expiresAt || account.expiresAt.getTime() < Date.now() + 60_000;
-  if (!isExpiring && account.accessToken) {
-    return account.accessToken;
+  const rawAccessToken = decryptToken(account.accessToken) ?? account.accessToken;
+
+  if (!isExpiring && rawAccessToken) {
+    return rawAccessToken;
   }
   return refreshAccountToken(account);
 }
