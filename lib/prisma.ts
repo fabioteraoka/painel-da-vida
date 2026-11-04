@@ -6,7 +6,13 @@ const isProduction = process.env.NODE_ENV === "production";
 const isExplicitDemo =
   process.env.DEMO_MODE === "true" ||
   process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-const hasNoDb = !process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "";
+const rawDbUrl = process.env.DATABASE_URL?.trim() || "";
+const isSampleDb =
+  !rawDbUrl ||
+  rawDbUrl.includes("sample") ||
+  rawDbUrl.includes("user:password") ||
+  rawDbUrl.includes("localhost:5432/dummydb");
+const hasNoDb = isSampleDb;
 
 export const isDemoMode = isExplicitDemo || hasNoDb;
 
@@ -659,7 +665,7 @@ function createMockPrisma(): PrismaClient {
 
 let realClient: PrismaClient | null = null;
 try {
-  if (process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== "") {
+  if (!isDemoMode && process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== "") {
     realClient = new PrismaClient({
       log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
     });
