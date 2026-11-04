@@ -13,6 +13,7 @@ import { AddTaskModal } from "./modals/add-task-modal";
 import { AddBillModal } from "./modals/add-bill-modal";
 import { AddProductModal } from "./modals/add-product-modal";
 import { SwitchAccountModal } from "./modals/switch-account-modal";
+import { GoogleConnectModal } from "./modals/google-connect-modal";
 import {
   detectCalendarConflicts,
   formatDueDate,
@@ -80,6 +81,7 @@ export default function Dashboard() {
   const [addBillModalOpen, setAddBillModalOpen] = useState(false);
   const [addProductModalOpen, setAddProductModalOpen] = useState(false);
   const [switchAccountModalOpen, setSwitchAccountModalOpen] = useState(false);
+  const [googleConnectModalOpen, setGoogleConnectModalOpen] = useState(false);
 
   // Active User session info
   const [activeUser, setActiveUser] = useState<{ email: string; name: string }>({
@@ -503,6 +505,7 @@ export default function Dashboard() {
         connectedAccounts={connectedAccounts}
         onOpenAccountsModal={() => setAccountsModalOpen(true)}
         onOpenSwitchAccountModal={() => setSwitchAccountModalOpen(true)}
+        onOpenGoogleConnectModal={() => setGoogleConnectModalOpen(true)}
         onRefreshAll={refreshAll}
         isRefreshing={isRefreshing}
         profileOpen={profileOpen}
@@ -559,6 +562,7 @@ export default function Dashboard() {
               onCreateTaskFromEmail={handleCreateTaskFromEmail}
               creatingTaskId={creatingEmailTaskId}
               taskError={emailTaskError}
+              onOpenGoogleConnectModal={() => setGoogleConnectModalOpen(true)}
             />
 
             {/* Tasks */}
@@ -633,6 +637,13 @@ export default function Dashboard() {
         currentEmail={activeUser.email}
         connectedAccounts={connectedAccounts}
         onAccountSwitched={refreshAll}
+      />
+
+      <GoogleConnectModal
+        isOpen={googleConnectModalOpen}
+        onClose={() => setGoogleConnectModalOpen(false)}
+        onConnected={refreshAll}
+        connectedAccounts={connectedAccounts}
       />
     </div>
   );
