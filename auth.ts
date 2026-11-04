@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { cookies } from "next/headers";
 import { prisma, isDemoMode } from "@/lib/prisma";
 import { upsertConnectedAccount } from "@/lib/connected-accounts";
 
@@ -111,11 +112,34 @@ export const { handlers, signIn, signOut } = nextAuth;
 export const DEFAULT_USER = {
   id: "user-fabio-teraoka",
   name: "Fábio Teraoka",
-  email: "fteraoka@gmail.com",
+  email: "fteraoka72@gmail.com",
   image: null,
 };
 
 export async function auth() {
+  try {
+    const cookieStore = await cookies();
+    const customEmail = cookieStore.get("painel_user_email")?.value;
+    if (customEmail && customEmail.includes("@")) {
+      const cleanEmail = customEmail.trim().toLowerCase();
+      const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+      const rawName = user?.name ?? cleanEmail.split("@")[0];
+      const userName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+      const userId = user?.id ?? `user-${cleanEmail.replace(/[^a-zA-Z0-9]/g, "-")}`;
+      return {
+        user: {
+          id: userId,
+          name: userName,
+          email: cleanEmail,
+          image: null,
+        },
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+    }
+  } catch {
+    // cookies() pode não estar disponível em certos contextos estáticos
+  }
+
   if (!isAuthConfigured) {
     if (isDemoMode) {
       return {

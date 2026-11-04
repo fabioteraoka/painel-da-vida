@@ -294,7 +294,7 @@ export async function GET(req: NextRequest) {
       const now = new Date();
       const mockPersonalAccount = allAccounts.find((a) => a.accountType === "PERSONAL") ?? {
         id: "acc-google-personal",
-        email: "fteraoka@gmail.com",
+        email: "fteraoka72@gmail.com",
         label: "Google — pessoal",
         accountType: "PERSONAL",
       };

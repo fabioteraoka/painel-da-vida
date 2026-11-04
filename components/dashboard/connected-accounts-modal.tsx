@@ -54,10 +54,9 @@ export function ConnectedAccountsModal({
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  // Account connection state
   const [addDemoOpen, setAddDemoOpen] = useState(false);
   const [demoProvider, setDemoProvider] = useState<"GOOGLE" | "MICROSOFT">("GOOGLE");
-  const [demoEmail, setDemoEmail] = useState("fteraoka1@gmail.com");
+  const [demoEmail, setDemoEmail] = useState("fteraoka72@gmail.com");
   const [demoLabel, setDemoLabel] = useState("");
   const [demoType, setDemoType] = useState<"PERSONAL" | "WORK" | "OTHER">("PERSONAL");
   const [creatingDemo, setCreatingDemo] = useState(false);

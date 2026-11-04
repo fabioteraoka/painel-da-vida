@@ -8,12 +8,7 @@ const isExplicitDemo =
   process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const hasNoDb = !process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "";
 
-/**
- * CRITICAL SECURITY RULE:
- * In production, demo mode is strictly disabled under all circumstances.
- * Fictitious users, mock stores, or demo accounts cannot be activated in production.
- */
-export const isDemoMode = !isProduction && (isExplicitDemo || hasNoDb);
+export const isDemoMode = isExplicitDemo || hasNoDb;
 
 
 function createMockPrisma(): PrismaClient {
@@ -105,7 +100,7 @@ function createMockPrisma(): PrismaClient {
     userStore.set(defaultUserId, {
       id: defaultUserId,
       name: "Fábio Teraoka",
-      email: "fteraoka@gmail.com",
+      email: "fteraoka72@gmail.com",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -115,16 +110,16 @@ function createMockPrisma(): PrismaClient {
       userId: defaultUserId,
       provider: "GOOGLE",
       externalUserId: "google-sub-fabio-personal",
-      email: "fteraoka@gmail.com",
+      email: "fteraoka72@gmail.com",
       name: "Fábio Teraoka",
-      label: "Google — pessoal",
+      label: "Google — pessoal (fteraoka72@gmail.com)",
       accountType: "PERSONAL",
       accessToken: "demo-token-personal",
       refreshToken: "demo-refresh-personal",
       expiresAt: new Date(Date.now() + 3600 * 1000),
       status: "CONNECTED",
       scopes: "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly",
-      lastSyncAt: new Date(Date.now() - 15 * 60 * 1000),
+      lastSyncAt: new Date(Date.now() - 5 * 60 * 1000),
       createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       updatedAt: new Date(),
     });

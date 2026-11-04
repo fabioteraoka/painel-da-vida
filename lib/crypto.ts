@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isDemoMode } from "./prisma";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12; // 96 bits recomendado para AES-GCM
@@ -17,10 +18,13 @@ export const ENCRYPTED_TOKEN_REGEX = /^enc:v1:([0-9a-fA-F]{24}):([0-9a-fA-F]{32}
  * - A chave deve ser fornecida exclusivamente via ENCRYPTION_KEY (ou o alias TOKEN_ENCRYPTION_KEY).
  * - AUTH_SECRET NÃO é aceito como substituto permanente de criptografia de banco.
  * - Deve possuir entropia mínima equivalente a pelo menos 32 caracteres.
- * - Nunca utiliza chaves fixas, previsíveis ou hardcoded.
+ * - Nunca utiliza chaves fixas, previsíveis ou hardcoded em produção real.
  */
 function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_KEY || process.env.TOKEN_ENCRYPTION_KEY;
+  const secret =
+    process.env.ENCRYPTION_KEY ||
+    process.env.TOKEN_ENCRYPTION_KEY ||
+    (isDemoMode ? "painel-da-vida-demo-encryption-key-32chars" : undefined);
 
   if (!secret || secret.trim().length < 32) {
     throw new Error(

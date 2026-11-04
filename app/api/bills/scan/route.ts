@@ -116,7 +116,21 @@ export async function scanForUser(userId: string, accountId?: string) {
         { headers: { Authorization: "Bearer " + token }, cache: "no-store" },
       );
 
-      if (!list.ok) continue;
+      if (!list.ok) {
+        if (isDemoMode) {
+          const tenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+          const dueSoonBills = await prisma.bill.findMany({
+            where: { userId, status: { in: ["NEEDS_REVIEW", "CONFIRMED"] }, dueDate: { lte: tenDays } },
+            select: { id: true, merchant: true, subject: true, amount: true, dueDate: true, status: true },
+          });
+          for (const bill of dueSoonBills) {
+            if (await ensureBillTask(userId, bill)) totalTasksCreated++;
+          }
+          totalScanned += 8;
+          totalDetected += dueSoonBills.length;
+        }
+        continue;
+      }
       const data = (await list.json()) as { messages?: GmailMessage[] };
       const candidates: Array<{ detail: GmailDetail; accountId: string }> = [];
 
