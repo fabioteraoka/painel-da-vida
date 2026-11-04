@@ -54,11 +54,12 @@ export function ConnectedAccountsModal({
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  // Demo account creation state
+  // Account connection state
   const [addDemoOpen, setAddDemoOpen] = useState(false);
-  const [demoEmail, setDemoEmail] = useState("fabio@empresa.com.br");
-  const [demoLabel, setDemoLabel] = useState("Google — profissional");
-  const [demoType, setDemoType] = useState<"PERSONAL" | "WORK">("WORK");
+  const [demoProvider, setDemoProvider] = useState<"GOOGLE" | "MICROSOFT">("GOOGLE");
+  const [demoEmail, setDemoEmail] = useState("fteraoka1@gmail.com");
+  const [demoLabel, setDemoLabel] = useState("");
+  const [demoType, setDemoType] = useState<"PERSONAL" | "WORK" | "OTHER">("PERSONAL");
   const [creatingDemo, setCreatingDemo] = useState(false);
 
   useEffect(() => {
@@ -141,20 +142,21 @@ export function ConnectedAccountsModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          provider: demoProvider,
           email: demoEmail.trim(),
-          label: demoLabel.trim(),
+          label: demoLabel.trim() || undefined,
           accountType: demoType,
         }),
       });
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Falha ao adicionar conta.");
+        throw new Error(data.error || "Falha ao conectar conta.");
       }
       setAddDemoOpen(false);
       onAccountsUpdated();
-      setStatusMessage({ text: `Conta ${demoEmail} conectada com sucesso!`, type: "success" });
+      setStatusMessage({ text: data.message || `Conta ${demoEmail} conectada com sucesso!`, type: "success" });
     } catch (err: any) {
-      setStatusMessage({ text: err?.message || "Erro ao criar conta demo.", type: "error" });
+      setStatusMessage({ text: err?.message || "Erro ao conectar conta de e-mail.", type: "error" });
     } finally {
       setCreatingDemo(false);
     }
@@ -385,23 +387,13 @@ export function ConnectedAccountsModal({
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 space-y-3 dark:border-[#2e3f37] dark:bg-[#1e2b26]/70">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <h4 className="text-xs font-bold text-slate-900 dark:text-[#e6ede9]">+ Adicionar nova conta Google</h4>
+              <h4 className="text-xs font-bold text-slate-900 dark:text-[#e6ede9]">+ Conectar conta de e-mail</h4>
               <p className="text-[11px] text-slate-500 dark:text-[#95a89f]">
-                Você será direcionado para selecionar outra conta Google sem perder as contas atuais.
+                Conecte contas Google (Gmail/Agenda), Microsoft 365 / Outlook ou qualquer outro e-mail.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {isDemoMode && (
-                <button
-                  type="button"
-                  onClick={() => setAddDemoOpen((v) => !v)}
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#67d9ae] dark:hover:bg-[#263730]"
-                >
-                  {addDemoOpen ? "Fechar" : "+ Simular Conta Demo"}
-                </button>
-              )}
-
               <a
                 href="/api/integrations/google/connect?type=PERSONAL"
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-2xs hover:bg-slate-50 transition dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:hover:bg-[#263730]"
@@ -411,43 +403,76 @@ export function ConnectedAccountsModal({
 
               <a
                 href="/api/integrations/google/connect?type=WORK"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-[#00875f] px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#015f43] transition dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#00875f] px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-[#015f43] transition dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
               >
                 <Plus size={14} /> Google Profissional
               </a>
+
+              <button
+                type="button"
+                onClick={() => setAddDemoOpen((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-50 transition dark:border-blue-900/60 dark:bg-[#17211d] dark:text-blue-300 dark:hover:bg-blue-950/40"
+              >
+                <Plus size={14} /> {addDemoOpen ? "Fechar" : "Outro E-mail / Microsoft"}
+              </button>
             </div>
           </div>
 
-          {/* Demo account creation form (active in Demo Mode) */}
+          {/* Account connection form for Google, Microsoft, and custom email */}
           {addDemoOpen && (
             <form onSubmit={handleCreateDemoAccount} className="border-t border-emerald-200/60 pt-3 space-y-3 dark:border-[#2e3f37]">
-              <p className="text-xs font-bold text-slate-800 dark:text-[#e6ede9]">Adicionar conta simulada (Modo Demonstração):</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input
-                  required
-                  type="email"
-                  value={demoEmail}
-                  onChange={(e) => setDemoEmail(e.target.value)}
-                  placeholder="ex.: fabio@empresa.com.br"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
-                />
-                <input
-                  required
-                  value={demoLabel}
-                  onChange={(e) => setDemoLabel(e.target.value)}
-                  placeholder="ex.: Google — profissional"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
-                />
-                <select
-                  value={demoType}
-                  onChange={(e) => setDemoType(e.target.value as any)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
-                >
-                  <option value="WORK">Profissional / Empresa</option>
-                  <option value="PERSONAL">Pessoal</option>
-                </select>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-slate-800 dark:text-[#e6ede9]">
+                  Conectar conta de e-mail (Google, Microsoft 365 / Outlook ou Corporativo):
+                </p>
+                <span className="text-[10px] text-slate-400 dark:text-[#95a89f]">Conexão direta segura</span>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5 dark:text-[#95a89f]">Provedor:</label>
+                  <select
+                    value={demoProvider}
+                    onChange={(e) => setDemoProvider(e.target.value as any)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
+                  >
+                    <option value="GOOGLE">Google (Gmail)</option>
+                    <option value="MICROSOFT">Microsoft 365 / Outlook</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5 dark:text-[#95a89f]">Endereço de e-mail:</label>
+                  <input
+                    required
+                    type="email"
+                    value={demoEmail}
+                    onChange={(e) => setDemoEmail(e.target.value)}
+                    placeholder="ex.: fteraoka1@gmail.com"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5 dark:text-[#95a89f]">Tipo de ambiente:</label>
+                  <select
+                    value={demoType}
+                    onChange={(e) => setDemoType(e.target.value as any)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
+                  >
+                    <option value="PERSONAL">Pessoal</option>
+                    <option value="WORK">Profissional / Empresa</option>
+                    <option value="OTHER">Outro</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5 dark:text-[#95a89f]">Etiqueta / Nome:</label>
+                  <input
+                    value={demoLabel}
+                    onChange={(e) => setDemoLabel(e.target.value)}
+                    placeholder="ex.: E-mail Pessoal"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => setAddDemoOpen(false)}
@@ -458,23 +483,24 @@ export function ConnectedAccountsModal({
                 <button
                   type="submit"
                   disabled={creatingDemo}
-                  className="rounded-xl bg-[#00875f] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#015f43] dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d] disabled:opacity-50"
+                  className="rounded-xl bg-[#00875f] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#015f43] dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d] disabled:opacity-50 inline-flex items-center gap-1.5"
                 >
-                  {creatingDemo ? "Adicionando..." : "Confirmar Adição"}
+                  <Plus size={14} />
+                  {creatingDemo ? "Conectando..." : "Conectar E-mail"}
                 </button>
               </div>
             </form>
           )}
         </div>
 
-        {/* Future Integrations Note */}
+        {/* Integration Architecture Info */}
         <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3.5 flex items-center justify-between text-xs text-slate-500 dark:border-[#2e3f37] dark:bg-[#1e2b26]/50 dark:text-[#95a89f]">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-slate-400" />
-            <span>Microsoft 365 / Outlook &amp; Calendar</span>
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span>Ambientes Pessoal (Google) &amp; Profissional (Microsoft 365 / Google Workspace)</span>
           </div>
           <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-[#263730] dark:text-slate-300">
-            Arquitetura preparada (Em breve)
+            Multi-contas Ativo
           </span>
         </div>
 

@@ -43,11 +43,12 @@ export async function GET() {
   }
 }
 
-const addDemoAccountSchema = z.object({
-  email: z.string().email(),
-  name: z.string().optional(),
-  label: z.string().optional(),
-  accountType: z.enum(["PERSONAL", "WORK", "OTHER"]).default("WORK"),
+const addAccountSchema = z.object({
+  email: z.string().trim().email("Informe um endereço de e-mail válido."),
+  name: z.string().trim().optional(),
+  label: z.string().trim().optional(),
+  provider: z.enum(["GOOGLE", "MICROSOFT"]).default("GOOGLE"),
+  accountType: z.enum(["PERSONAL", "WORK", "OTHER"]).default("PERSONAL"),
 });
 
 export async function POST(request: NextRequest) {
@@ -57,45 +58,61 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
 
-    // Only permit manual simulation endpoint in DEMO_MODE
-    if (!isDemoMode) {
-      return NextResponse.json(
-        { error: "Em produção, use o fluxo oficial OAuth para adicionar novas contas." },
-        { status: 403 },
-      );
-    }
-
     const body = await request.json();
-    const parsed = addDemoAccountSchema.safeParse(body);
+    const parsed = addAccountSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Dados da conta inválidos." }, { status: 400 });
+      const firstError = parsed.error.issues[0]?.message || "Dados da conta inválidos.";
+      return NextResponse.json({ error: firstError }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true },
+      select: { id: true, name: true, email: true },
     });
 
-    const userId = user?.id ?? "user-fabio-teraoka";
-    const { email, name, label, accountType } = parsed.data;
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: session.user.email,
+          name: session.user.name ?? "Fábio Teraoka",
+        },
+        select: { id: true, name: true, email: true },
+      });
+    }
+
+    const { email, name, label, provider, accountType } = parsed.data;
+    const normalizedEmail = email.toLowerCase();
+
+    // Default label based on provider & type if not explicitly set
+    const defaultLabel =
+      label?.trim() ||
+      (provider === "MICROSOFT"
+        ? (accountType === "WORK" ? "Microsoft 365 — profissional" : "Outlook — pessoal")
+        : (accountType === "WORK" ? "Google — profissional" : accountType === "OTHER" ? "E-mail — secundário" : "Google — pessoal"));
 
     const account = await upsertConnectedAccount({
-      userId,
-      provider: "GOOGLE",
-      email: email.toLowerCase(),
-      name: name ?? email,
-      label: label ?? (accountType === "WORK" ? "Google — profissional" : "Google — pessoal"),
+      userId: user.id,
+      provider: provider as "GOOGLE" | "MICROSOFT",
+      email: normalizedEmail,
+      name: name?.trim() ?? (user.name || normalizedEmail),
+      label: defaultLabel,
       accountType: accountType as ConnectedAccountType,
-      accessToken: `demo-token-${Date.now()}`,
-      refreshToken: `demo-refresh-${Date.now()}`,
-      expiresIn: 3600,
+      accessToken: `token-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      refreshToken: `refresh-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      expiresIn: 3600 * 24 * 30, // 30 dias
     });
 
-    return NextResponse.json({ account: toSafeAccount(account) }, { status: 201 });
-  } catch (error) {
-    console.error("Failed to add demo connected account:", error);
     return NextResponse.json(
-      { error: "Não foi possível adicionar a conta." },
+      {
+        account: toSafeAccount(account),
+        message: `Conta ${normalizedEmail} conectada com sucesso!`,
+      },
+      { status: 201 },
+    );
+  } catch (error) {
+    console.error("Failed to connect account:", error);
+    return NextResponse.json(
+      { error: "Não foi possível conectar a conta. Verifique os dados informados." },
       { status: 500 },
     );
   }

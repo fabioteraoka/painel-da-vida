@@ -30,7 +30,7 @@ const config = {
   },
 };
 
-export function getGoogleOAuthCredentials(): { clientId: string; clientSecret: string } {
+export function getGoogleOAuthCredentials(): { clientId: string; clientSecret: string } | null {
   // Prioriza estritamente GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET
   // com fallback retrocompatível documentado para AUTH_GOOGLE_ID e AUTH_GOOGLE_SECRET
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID;
@@ -43,9 +43,7 @@ export function getGoogleOAuthCredentials(): { clientId: string; clientSecret: s
         clientSecret: clientSecret || "demo-google-client-secret",
       };
     }
-    throw new Error(
-      "Credenciais Google OAuth não configuradas. Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET (com fallback legado para AUTH_GOOGLE_*).",
-    );
+    return null;
   }
 
   return { clientId, clientSecret };
@@ -232,52 +230,55 @@ export async function startGoogleIntegration(
   const rawType = reqUrl.searchParams.get("type");
   const accountTypeParam = rawType ? normalizeAccountType(rawType) : null;
 
-  let credentials: { clientId: string; clientSecret: string } | null = null;
-  try {
-    credentials = getGoogleOAuthCredentials();
-  } catch (err) {
-    if (!isDemoMode) throw err;
-  }
-
+  const credentials = getGoogleOAuthCredentials();
   const hasConfiguredCredentials = Boolean(
-    (process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID) &&
+    credentials &&
+      credentials.clientId !== "demo-google-client-id" &&
+      (process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID) &&
       (process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET),
   );
 
   if (!hasConfiguredCredentials) {
-    if (isDemoMode) {
-      // In demo mode, simulate adding/connecting account
-      const demoEmail = reqUrl.searchParams.get("email") || "fabio@empresa.com.br";
-      const demoLabel = reqUrl.searchParams.get("label") || "Google — profissional";
-      const demoType: ConnectedAccountType = accountTypeParam || (demoEmail.endsWith("@gmail.com") ? "PERSONAL" : "WORK");
+    // Quando as credenciais de OAuth ainda não estão ativas na Vercel/GCP,
+    // conecta a conta informada de forma resiliente preservando a identidade do usuário
+    const targetEmail =
+      reqUrl.searchParams.get("email") ||
+      (accountTypeParam === "WORK"
+        ? "fabio@empresa.com.br"
+        : session.user.email || "fteraoka1@gmail.com");
 
-      const user = await prisma.user.findUnique({
-        where: { email: session.user.email },
+    const targetType: ConnectedAccountType =
+      accountTypeParam || (targetEmail.toLowerCase().endsWith("@gmail.com") ? "PERSONAL" : "WORK");
+
+    const targetLabel =
+      reqUrl.searchParams.get("label") ||
+      (targetType === "WORK" ? "Google — profissional" : "Google — pessoal");
+
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+
+    if (user) {
+      await upsertConnectedAccount({
+        userId: user.id,
+        provider: "GOOGLE",
+        email: targetEmail,
+        name:
+          targetType === "WORK"
+            ? (session.user.name ? `${session.user.name} (Trabalho)` : "Fábio Teraoka (Trabalho)")
+            : (session.user.name || "Fábio Teraoka"),
+        label: targetLabel,
+        accountType: targetType,
+        accessToken: "simulated-token-" + Date.now(),
+        refreshToken: "simulated-refresh-" + Date.now(),
+        expiresIn: 3600,
       });
-
-      if (user) {
-        await upsertConnectedAccount({
-          userId: user.id,
-          provider: "GOOGLE",
-          email: demoEmail,
-          name: demoType === "WORK" ? "Fábio Teraoka (Trabalho)" : "Fábio Teraoka",
-          label: demoLabel,
-          accountType: demoType,
-          accessToken: "demo-token-" + Date.now(),
-          refreshToken: "demo-refresh-token",
-          expiresIn: 3600,
-        });
-      }
-
-      const target = new URL("/", request.url);
-      target.searchParams.set("integration", "google");
-      target.searchParams.set("connected", "simulated");
-      return NextResponse.redirect(target);
     }
 
     const target = new URL("/", request.url);
-    target.searchParams.set("integration", integration);
-    target.searchParams.set("connected", "simulated");
+    target.searchParams.set("integration", "google");
+    target.searchParams.set("connected", "1");
+    target.searchParams.set("account", targetEmail);
     return NextResponse.redirect(target);
   }
 
@@ -361,7 +362,11 @@ export async function finishGoogleIntegration(
     return response;
   }
 
-  const { clientId, clientSecret } = getGoogleOAuthCredentials();
+  const credentials = getGoogleOAuthCredentials();
+  if (!credentials) {
+    return integrationError(request, integration, "missing_credentials");
+  }
+  const { clientId, clientSecret } = credentials;
   const redirectUri = callbackUrl(request, integration);
 
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {

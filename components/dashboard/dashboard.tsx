@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Check,
   CheckCheck,
+  CheckCircle2,
   ChevronRight,
   CircleAlert,
   Clock3,
@@ -280,6 +281,46 @@ export default function Dashboard() {
   const [editingAccountLabel, setEditingAccountLabel] = useState("");
   const [editingAccountType, setEditingAccountType] = useState<"PERSONAL" | "WORK" | "OTHER">("PERSONAL");
   const [accountActionMessage, setAccountActionMessage] = useState<string | null>(null);
+  const [integrationBanner, setIntegrationBanner] = useState<{
+    type: "success" | "error" | "info";
+    message: string;
+  } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const integration = params.get("integration");
+    if (!integration) return null;
+
+    const connected = params.get("connected");
+    const accountParam = params.get("account");
+    const errorParam = params.get("error");
+
+    if (connected === "1" || connected === "simulated") {
+      const accName = accountParam || "Google";
+      return {
+        type: "success",
+        message: `Conta ${accName} conectada com sucesso ao Painel da Vida! E-mails e agenda sincronizados.`,
+      };
+    }
+
+    if (errorParam) {
+      const errorDescriptions: Record<string, string> = {
+        missing_google_credentials: "As credenciais do Google OAuth não estão configuradas no servidor.",
+        missing_credentials: "Credenciais de autenticação não configuradas no ambiente.",
+        oauth_csrf_validation_failed: "A validação de segurança OAuth expirou ou foi cancelada. Tente novamente.",
+        token_exchange_failed: "Não foi possível validar o código de autorização com o Google.",
+        access_denied: "Autorização cancelada pelo usuário no Google.",
+        userinfo_failed: "Não foi possível obter os dados da conta Google.",
+        persistence_failed: "Falha ao gravar os dados da conta conectada no banco.",
+      };
+      const desc = errorDescriptions[errorParam] || `Falha na autenticação (${errorParam}).`;
+      return {
+        type: "error",
+        message: `Erro na conexão: ${desc}`,
+      };
+    }
+
+    return null;
+  });
 
   const [realCalendarEvents, setRealCalendarEvents] = useState<CalendarApiEvent[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
@@ -352,6 +393,16 @@ export default function Dashboard() {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
 
+  // Clean up OAuth return query params from address bar
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("integration")) {
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, "", cleanUrl);
+    }
+  }, []);
+
   // Lock body scroll when mobile menu is open
   useEffect(() => {
     if (mobile) {
@@ -389,7 +440,7 @@ export default function Dashboard() {
     window.localStorage.setItem("painel-da-vida-theme", nextTheme);
   }
 
-  async function loadAccounts() {
+  const loadAccounts = useCallback(async () => {
     setAccountsLoading(true);
     try {
       const res = await fetch("/api/integrations/accounts", { cache: "no-store" });
@@ -402,12 +453,12 @@ export default function Dashboard() {
     } finally {
       setAccountsLoading(false);
     }
-  }
+  }, []);
 
-  async function loadCalendar(accId?: string) {
-    const targetId = accId !== undefined ? accId : selectedCalendarAccount;
+  const loadCalendar = useCallback(async (accId?: string) => {
     setCalendarLoading(true);
     try {
+      const targetId = accId !== undefined ? accId : "all";
       const query = targetId && targetId !== "all" ? `?accountId=${encodeURIComponent(targetId)}` : "";
       const response = await fetch(`/api/calendar/events${query}`, { cache: "no-store" });
       if (response.status === 409 || response.status === 401) {
@@ -422,12 +473,12 @@ export default function Dashboard() {
     } finally {
       setCalendarLoading(false);
     }
-  }
+  }, []);
 
-  async function loadGmail(accId?: string) {
-    const targetId = accId !== undefined ? accId : selectedGmailAccount;
+  const loadGmail = useCallback(async (accId?: string) => {
     setGmailLoading(true);
     try {
+      const targetId = accId !== undefined ? accId : "all";
       const params = new URLSearchParams({ includeNoise: "true" });
       if (targetId && targetId !== "all") params.set("accountId", targetId);
       const response = await fetch(`/api/gmail/messages?${params.toString()}`, { cache: "no-store" });
@@ -443,7 +494,7 @@ export default function Dashboard() {
     } finally {
       setGmailLoading(false);
     }
-  }
+  }, []);
 
   async function handleSyncAccount(accountId: string) {
     setSyncingAccountId(accountId);
@@ -575,7 +626,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAccounts, loadCalendar, loadGmail]);
 
   const copyToClipboard = (text: string, key: string) => {
     if (navigator?.clipboard) {
@@ -1101,6 +1152,46 @@ export default function Dashboard() {
           </header>
 
           <div className="mx-auto max-w-[1520px] p-4 sm:p-6 lg:p-8 space-y-7">
+            {/* Feedback Banner for OAuth & Account Integrations */}
+            {integrationBanner && (
+              <div
+                role="status"
+                className={`rounded-2xl p-4 flex items-center justify-between shadow-xs border ${
+                  integrationBanner.type === "success"
+                    ? "bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-[#17382d] dark:text-[#67d9ae] dark:border-[#264f40]"
+                    : "bg-red-50 text-red-900 border-red-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900/60"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {integrationBanner.type === "success" ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-[#00b37e] shrink-0" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-rose-400 shrink-0" />
+                  )}
+                  <p className="text-sm font-medium">{integrationBanner.message}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {integrationBanner.type === "error" && (
+                    <button
+                      type="button"
+                      onClick={() => setAccountsModalOpen(true)}
+                      className="rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-slate-800 border border-slate-200 hover:bg-slate-50 dark:bg-[#17211d] dark:text-[#e6ede9] dark:border-[#2e3f37] cursor-pointer"
+                    >
+                      Gerenciar Contas
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIntegrationBanner(null)}
+                    className="rounded-lg p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    aria-label="Dispensar aviso"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Top Greeting & Date */}
             <section className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
               <div>

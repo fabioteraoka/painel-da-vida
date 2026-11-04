@@ -178,7 +178,7 @@ async function runTests() {
 
     const creds1 = getGoogleOAuthCredentials();
     assert(
-      creds1.clientId === "primary-client-id" && creds1.clientSecret === "primary-client-secret",
+      creds1 !== null && creds1.clientId === "primary-client-id" && creds1.clientSecret === "primary-client-secret",
       "getGoogleOAuthCredentials prioriza estritamente GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET sobre AUTH_GOOGLE_*",
     );
 
@@ -187,7 +187,7 @@ async function runTests() {
     delete process.env.GOOGLE_CLIENT_SECRET;
     const creds2 = getGoogleOAuthCredentials();
     assert(
-      creds2.clientId === "secondary-client-id" && creds2.clientSecret === "secondary-client-secret",
+      creds2 !== null && creds2.clientId === "secondary-client-id" && creds2.clientSecret === "secondary-client-secret",
       "getGoogleOAuthCredentials realiza fallback seguro para AUTH_GOOGLE_* se GOOGLE_CLIENT_* não estiverem presentes",
     );
 
