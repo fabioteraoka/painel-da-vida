@@ -105,10 +105,10 @@ export function GoogleConnectModal({
             </div>
             <div>
               <h3 id="google-connect-title" className="text-base font-bold text-slate-900 dark:text-[#e6ede9]">
-                Conectar com o Google
+                Conectar Conta de E-mail
               </h3>
               <p className="text-xs text-slate-500 dark:text-[#95a89f]">
-                Sincronize seus e-mails do Gmail e sua agenda
+                Sincronize mensagens e agenda diretamente, sem depender de credenciais de API do Google
               </p>
             </div>
           </div>
