@@ -50,12 +50,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Gravar cookie de sessão ativa
+    // 3. Gravar cookie de sessão ativa (compatível com iframe e cross-origin)
     const cookieStore = await cookies();
     cookieStore.set("painel_user_email", cleanEmail, {
       path: "/",
       maxAge: 30 * 24 * 60 * 60,
-      sameSite: "lax",
+      sameSite: "none",
+      secure: true,
     });
 
     return NextResponse.json({

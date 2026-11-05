@@ -76,3 +76,62 @@ export async function PATCH(request: Request) {
     responsiblePerson:updated.responsiblePerson?{id:updated.responsiblePerson.id,name:updated.responsiblePerson.name,relation:updated.responsiblePerson.relation}:null
   });
 }
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } });
+    if (!user) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+
+    const body = await request.json();
+    if (!body.merchant && !body.subject) {
+      return NextResponse.json({ error: "Informe o nome ou estabelecimento da conta." }, { status: 400 });
+    }
+
+    const dueDate = body.dueDate ? new Date(body.dueDate) : null;
+    const amount = body.amount !== undefined && body.amount !== null ? Number(body.amount) : null;
+
+    const newBill = await prisma.bill.create({
+      data: {
+        userId: user.id,
+        merchant: body.merchant || body.subject,
+        subject: body.subject || body.merchant,
+        amount,
+        dueDate,
+        category: body.category || "UTILITIES",
+        status: body.status || "NEEDS_REVIEW",
+        confidence: 1.0,
+        responsibleType: body.responsibleType || "ME",
+        responsibleName: body.responsibleName || "Fábio Teraoka",
+        responsiblePersonId: body.responsiblePersonId || null,
+        paymentAccountId: body.paymentAccountId || null,
+        pixCode: body.pixCode || null,
+        barcode: body.barcode || null,
+        paymentUrl: body.paymentUrl || null,
+      },
+    });
+
+    // Se a conta tiver vencimento próximo em até 10 dias, criar tarefa correspondente
+    if (dueDate) {
+      const tenDays = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+      if (dueDate <= tenDays) {
+        await prisma.task.create({
+          data: {
+            title: `Pagar ${newBill.merchant || newBill.subject}${amount ? ` — R$ ${amount.toFixed(2)}` : ""}`,
+            description: `Vencimento em ${dueDate.toLocaleDateString("pt-BR")}.`,
+            priority: "HIGH",
+            dueAt: dueDate,
+            userId: user.id,
+            billId: newBill.id,
+          },
+        });
+      }
+    }
+
+    return NextResponse.json(newBill, { status: 201 });
+  } catch (error: any) {
+    console.error("Create bill error:", error);
+    return NextResponse.json({ error: error?.message || "Erro ao criar conta." }, { status: 500 });
+  }
+}

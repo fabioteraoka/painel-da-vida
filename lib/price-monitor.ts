@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { generateText, gateway, stepCountIs } from "ai";
 import { aiModel } from "@/lib/ai-gateway";
-import { prisma } from "@/lib/prisma";
+import { prisma, isDemoMode } from "@/lib/prisma";
 
 type CollectedPrice = { price: number; currency: string; source: string; observedAt: Date };
 
@@ -264,28 +264,56 @@ Responda somente JSON neste formato:
   }
 }
 
-export async function collectPrice(product: { name: string; url: string | null; source: string | null }): Promise<CollectedPrice> {
-  if (!product.url) throw new Error("Produto sem URL de coleta.");
+export async function collectPrice(product: {
+  name: string;
+  url: string | null;
+  source: string | null;
+  currentPrice?: any;
+  targetPrice?: any;
+}): Promise<CollectedPrice> {
+  if (!product.url && !isDemoMode) throw new Error("Produto sem URL de coleta.");
   let page: { html: string; url: string } | null = null;
-  try {
-    page = await fetchProductPage(product.url);
-  } catch (error) {
-    console.warn("Direct price page fetch failed; trying AI web search", error instanceof Error ? error.message : error);
+  if (product.url) {
+    try {
+      page = await fetchProductPage(product.url);
+    } catch (error) {
+      console.warn("Direct price page fetch failed; trying AI web search", error instanceof Error ? error.message : error);
+    }
   }
 
   const resolvedUrl = page?.url ?? product.url;
-  const defaultCurrency = new URL(resolvedUrl).hostname.toLowerCase().endsWith(".br") ? "BRL" : "";
-  const extracted = page ? extractStructuredPrice(page.html, defaultCurrency) : null;
-  if (extracted) {
-    if (extracted.currency !== "BRL") throw new Error(extracted.currency ? `Moeda não suportada para monitoramento: ${extracted.currency}.` : "A página não informou a moeda do preço.");
-    return { price: extracted.price, currency: "BRL", source: new URL(resolvedUrl).hostname, observedAt: new Date() };
+  if (resolvedUrl) {
+    const defaultCurrency = new URL(resolvedUrl).hostname.toLowerCase().endsWith(".br") ? "BRL" : "";
+    const extracted = page ? extractStructuredPrice(page.html, defaultCurrency) : null;
+    if (extracted) {
+      if (extracted.currency !== "BRL") throw new Error(extracted.currency ? `Moeda não suportada para monitoramento: ${extracted.currency}.` : "A página não informou a moeda do preço.");
+      return { price: extracted.price, currency: "BRL", source: new URL(resolvedUrl).hostname, observedAt: new Date() };
+    }
   }
 
-  const aiPrice = await findPriceWithAi({ name: product.name, url: product.url });
-  if (!aiPrice) {
-    throw new Error("Não encontrei um preço atual com evidência suficiente para confirmar que é este mesmo produto.");
+  try {
+    if (product.url) {
+      const aiPrice = await findPriceWithAi({ name: product.name, url: product.url });
+      if (aiPrice) {
+        return { price: aiPrice.price, currency: "BRL", source: new URL(aiPrice.sourceUrl).hostname, observedAt: new Date() };
+      }
+    }
+  } catch (error) {
+    if (!isDemoMode) throw error;
   }
-  return { price: aiPrice.price, currency: "BRL", source: new URL(aiPrice.sourceUrl).hostname, observedAt: new Date() };
+
+  if (isDemoMode) {
+    const current = Number(product.currentPrice);
+    const target = Number(product.targetPrice);
+    const basePrice = Number.isFinite(current) && current > 0 ? current : Number.isFinite(target) && target > 0 ? target : 299.9;
+    // Variação realista para simulação dinâmica de mercado (-6% a +2%)
+    const pct = (Math.random() * 0.08 - 0.05);
+    const simulated = Math.max(10, Math.round(basePrice * (1 + pct) * 100) / 100);
+    const sourceHost = resolvedUrl ? new URL(resolvedUrl).hostname.replace("www.", "") : product.source || "Amazon";
+    return { price: simulated, currency: "BRL", source: sourceHost, observedAt: new Date() };
+  }
+
+  throw new Error("Não encontrei um preço atual com evidência suficiente para confirmar que é este mesmo produto.");
 }
 
 export async function monitorPrices(userId?: string) {

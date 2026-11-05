@@ -30,9 +30,13 @@ export default function Dashboard() {
   // Theme state
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== "undefined") {
-      const savedTheme = window.localStorage.getItem("painel-da-vida-theme");
-      if (savedTheme) return savedTheme === "dark";
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+      try {
+        const savedTheme = window.localStorage.getItem("painel-da-vida-theme");
+        if (savedTheme) return savedTheme === "dark";
+        return window.matchMedia("(prefers-color-scheme: dark)").matches;
+      } catch {
+        return false;
+      }
     }
     return false;
   });
@@ -99,7 +103,11 @@ export default function Dashboard() {
     setDarkMode((prev) => {
       const next = !prev;
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("painel-da-vida-theme", next ? "dark" : "light");
+        try {
+          window.localStorage.setItem("painel-da-vida-theme", next ? "dark" : "light");
+        } catch {
+          // Ignore storage restrictions in iframes
+        }
         if (next) {
           document.documentElement.dataset.theme = "dark";
           document.documentElement.classList.add("dark");
@@ -126,14 +134,14 @@ export default function Dashboard() {
   }, []);
 
   // Fetch Calendar Events
-  const fetchCalendar = useCallback(async (accountId = selectedCalendarAccount) => {
+  const fetchCalendar = useCallback(async (accountId?: string) => {
     setCalendarLoading(true);
     setCalendarError(false);
     try {
-      const url =
-        accountId && accountId !== "all"
-          ? `/api/calendar/events?accountId=${encodeURIComponent(accountId)}`
-          : "/api/calendar/events";
+      const targetId = accountId && accountId !== "all" ? accountId : undefined;
+      const url = targetId
+        ? `/api/calendar/events?accountId=${encodeURIComponent(targetId)}`
+        : "/api/calendar/events";
       const res = await fetch(url);
       if (!res.ok) throw new Error("Erro ao carregar agenda.");
       const data = await res.json();
@@ -143,17 +151,17 @@ export default function Dashboard() {
     } finally {
       setCalendarLoading(false);
     }
-  }, [selectedCalendarAccount]);
+  }, []);
 
   // Fetch Gmail Messages
-  const fetchGmail = useCallback(async (accountId = selectedGmailAccount) => {
+  const fetchGmail = useCallback(async (accountId?: string) => {
     setGmailLoading(true);
     setGmailError(false);
     try {
-      const url =
-        accountId && accountId !== "all"
-          ? `/api/gmail/messages?accountId=${encodeURIComponent(accountId)}&includeNoise=true`
-          : "/api/gmail/messages?includeNoise=true";
+      const targetId = accountId && accountId !== "all" ? accountId : undefined;
+      const url = targetId
+        ? `/api/gmail/messages?accountId=${encodeURIComponent(targetId)}&includeNoise=true`
+        : "/api/gmail/messages?includeNoise=true";
       const res = await fetch(url);
       if (!res.ok) throw new Error("Erro ao carregar e-mails.");
       const data = await res.json();
@@ -163,7 +171,7 @@ export default function Dashboard() {
     } finally {
       setGmailLoading(false);
     }
-  }, [selectedGmailAccount]);
+  }, []);
 
   // Fetch Bills
   const fetchBills = useCallback(async () => {
@@ -278,20 +286,13 @@ export default function Dashboard() {
     setIsRefreshing(false);
   }, [fetchUser, fetchAccounts, fetchCalendar, fetchGmail, fetchBills, fetchTasks, fetchProducts, fetchPeople]);
 
-  // Initial load
+  // Initial load once on mount (deferred to avoid cascading render)
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchUser();
-      fetchAccounts();
-      fetchCalendar();
-      fetchGmail();
-      fetchBills();
-      fetchTasks();
-      fetchProducts();
-      fetchPeople();
+      refreshAll();
     }, 0);
     return () => clearTimeout(timer);
-  }, [fetchUser, fetchAccounts, fetchCalendar, fetchGmail, fetchBills, fetchTasks, fetchProducts, fetchPeople]);
+  }, [refreshAll]);
 
   // Detect calendar conflicts
   const conflicts = useMemo(() => detectCalendarConflicts(calendarEvents), [calendarEvents]);
@@ -301,10 +302,11 @@ export default function Dashboard() {
     setCreatingEmailTaskId(message.id);
     setEmailTaskError(null);
     try {
-      const res = await fetch("/app/api/gmail/tasks" in window ? "/app/api/gmail/tasks" : "/api/gmail/tasks", {
+      const res = await fetch("/api/gmail/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          externalId: message.id,
           externalEmailId: message.id,
           threadId: message.threadId,
           subject: message.subject,
@@ -312,6 +314,7 @@ export default function Dashboard() {
           sender: message.sender,
           senderName: message.senderName,
           connectedAccountId: message.connectedAccountId,
+          category: message.dashboardCategory === "FOLLOW_UP" ? "FOLLOW_UP" : "RESPOND_TODAY",
         }),
       });
 
@@ -344,6 +347,7 @@ export default function Dashboard() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          completed: nextCompleted,
           status: nextCompleted ? "COMPLETED" : "PENDING",
         }),
       });
@@ -449,7 +453,8 @@ export default function Dashboard() {
       const data = await res.json();
       if (res.ok) {
         await fetchProducts();
-        setPriceCheckMessage(`Verificação concluída: ${data.checked} produtos verificados nas lojas.`);
+        const total = data.updated ?? data.scanned ?? data.checked ?? 0;
+        setPriceCheckMessage(`Verificação concluída: ${total} produto${total !== 1 ? "s" : ""} verificado${total !== 1 ? "s" : ""} nas lojas.`);
       }
     } catch {
       setPriceCheckMessage("Erro ao consultar lojas.");

@@ -7,14 +7,18 @@ import { z } from "zod";
 export const runtime = "nodejs";
 
 const createTaskSchema = z.object({
-  externalId: z.string().trim().min(1).max(255),
+  externalId: z.string().trim().min(1).max(255).optional(),
+  externalEmailId: z.string().trim().min(1).max(255).optional(),
   threadId: z.string().max(255).optional(),
   connectedAccountId: z.string().optional(),
   sender: z.string().trim().min(1).max(500),
+  senderName: z.string().max(255).optional(),
   subject: z.string().trim().min(1).max(500),
   snippet: z.string().max(2000).optional(),
-  category: z.enum(["RESPOND_TODAY", "FOLLOW_UP"]),
+  category: z.enum(["RESPOND_TODAY", "FOLLOW_UP"]).optional(),
   receivedAt: z.string().datetime().optional(),
+}).refine((data) => Boolean(data.externalId || data.externalEmailId), {
+  message: "externalId é obrigatório",
 });
 
 export async function POST(request: Request) {
@@ -36,19 +40,21 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
 
     const input = parsed.data;
+    const resolvedExternalId = (input.externalId || input.externalEmailId)!;
+    const resolvedCategory = input.category || "RESPOND_TODAY";
     const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const email = await tx.email.upsert({
-        where: { userId_externalId: { userId: user.id, externalId: input.externalId } },
+        where: { userId_externalId: { userId: user.id, externalId: resolvedExternalId } },
         create: {
-          externalId: input.externalId,
+          externalId: resolvedExternalId,
           threadId: input.threadId ?? null,
           connectedAccountId: input.connectedAccountId ?? null,
           sender: input.sender,
           subject: input.subject,
           snippet: input.snippet ?? null,
           receivedAt,
-          category: input.category,
+          category: resolvedCategory,
           needsAction: true,
           source: "gmail",
           userId: user.id,
@@ -60,7 +66,7 @@ export async function POST(request: Request) {
           subject: input.subject,
           snippet: input.snippet ?? null,
           receivedAt,
-          category: input.category,
+          category: resolvedCategory,
           needsAction: true,
         },
       });
@@ -68,13 +74,13 @@ export async function POST(request: Request) {
       const existingTask = await tx.task.findUnique({ where: { emailId: email.id } });
       if (existingTask) return { task: existingTask, created: false };
 
-      const dueAt = input.category === "RESPOND_TODAY" ? new Date() : null;
+      const dueAt = resolvedCategory === "RESPOND_TODAY" ? new Date() : null;
       if (dueAt) dueAt.setUTCHours(23, 59, 0, 0);
       const task = await tx.task.create({
         data: {
-          title: `${input.category === "RESPOND_TODAY" ? "Responder" : "Acompanhar"}: ${input.subject}`,
+          title: `${resolvedCategory === "RESPOND_TODAY" ? "Responder" : "Acompanhar"}: ${input.subject}`,
           description: [`De: ${input.sender}`, input.snippet?.trim()].filter(Boolean).join("\n\n"),
-          priority: input.category === "RESPOND_TODAY" ? "HIGH" : "MEDIUM",
+          priority: resolvedCategory === "RESPOND_TODAY" ? "HIGH" : "MEDIUM",
           dueAt,
           emailId: email.id,
           userId: user.id,

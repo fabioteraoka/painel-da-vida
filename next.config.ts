@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   allowedDevOrigins: [
     "*.run.app",
+    "*.google.com",
+    "*.google.dev",
     "localhost:3000",
   ],
 };
