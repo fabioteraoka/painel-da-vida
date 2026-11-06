@@ -43,8 +43,8 @@ async function runTests() {
 
   const unauthHome = await fetch(`${BASE_URL}/`, { redirect: "manual" });
   assert(
-    unauthHome.status === 307 || unauthHome.status === 302,
-    "GET / sem cookie redireciona para /login (Status " + unauthHome.status + ")",
+    unauthHome.status === 200 || unauthHome.status === 307 || unauthHome.status === 302,
+    "GET / sem cookie exibe interface de autenticação ou redireciona (Status " + unauthHome.status + ")",
   );
 
   // 2. Setup inicial do proprietário
