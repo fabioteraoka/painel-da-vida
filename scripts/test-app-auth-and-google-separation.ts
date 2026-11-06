@@ -10,6 +10,8 @@
  * 7. Logout and session invalidation
  */
 
+import { getAppSetupSecret } from "../lib/setup-secret";
+
 const BASE_URL = "http://localhost:3000";
 
 async function runTests() {
@@ -72,12 +74,14 @@ async function runTests() {
     "Tentativa de setup com secret incorreto é bloqueada com 403",
   );
 
+  const realSecret = getAppSetupSecret();
+
   // Tentativa com senha curta (<8)
   const shortPassRes = await fetch(`${BASE_URL}/api/auth/setup-owner`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      setupSecret: "painel-setup-2026",
+      setupSecret: realSecret,
       email: "fteraoka72@gmail.com",
       password: "curta",
     }),
@@ -92,7 +96,7 @@ async function runTests() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      setupSecret: "painel-setup-2026",
+      setupSecret: realSecret,
       email: "fteraoka72@gmail.com",
       name: "Fábio Teraoka",
       password: "MinhaSenhaSeguraArgon2id!",
@@ -113,7 +117,7 @@ async function runTests() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      setupSecret: "painel-setup-2026",
+      setupSecret: realSecret,
       email: "outro@hacker.com",
       password: "OutraSenha12345!",
     }),

@@ -7,6 +7,7 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
 } from "@/lib/auth-passwords";
+import { getAppSetupSecret, verifySetupSecret } from "@/lib/setup-secret";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,39 +18,23 @@ export async function POST(req: NextRequest) {
     const { setupSecret, email, password, name } = body || {};
 
     // 1. Validação do segredo de configuração (uso único protegido)
-    const requiredSecret = process.env.APP_SETUP_SECRET || process.env.SETUP_SECRET;
-    const isProd = process.env.NODE_ENV === "production";
+    const configuredSecret = getAppSetupSecret();
+    if (!configuredSecret) {
+      return NextResponse.json(
+        {
+          error:
+            "APP_SETUP_SECRET não está configurada no ambiente. " +
+            "Gere ou configure a chave no arquivo .env.local para autorizar a configuração inicial.",
+        },
+        { status: 500 },
+      );
+    }
 
-    if (!requiredSecret) {
-      if (isProd) {
-        return NextResponse.json(
-          {
-            error:
-              "APP_SETUP_SECRET não está configurada no ambiente de produção. " +
-              "Configure a variável de ambiente para autorizar a configuração inicial do proprietário.",
-          },
-          { status: 500 },
-        );
-      }
-      // Em desenvolvimento local sem secret explícito, aceita o token de bootstrap padrão
-      const devBootstrapSecret = "painel-setup-2026";
-      if (setupSecret !== devBootstrapSecret) {
-        return NextResponse.json(
-          {
-            error:
-              "Chave de configuração incorreta. " +
-              "Em ambiente de desenvolvimento sem APP_SETUP_SECRET, utilize 'painel-setup-2026'.",
-          },
-          { status: 403 },
-        );
-      }
-    } else {
-      if (!setupSecret || setupSecret.trim() !== requiredSecret.trim()) {
-        return NextResponse.json(
-          { error: "Chave de configuração (APP_SETUP_SECRET) inválida ou não autorizada." },
-          { status: 403 },
-        );
-      }
+    if (!setupSecret || !verifySetupSecret(setupSecret)) {
+      return NextResponse.json(
+        { error: "Chave de configuração (APP_SETUP_SECRET) inválida ou não autorizada." },
+        { status: 403 },
+      );
     }
 
     // 2. Validação de uso único: se já existir qualquer usuário com senha, proíbe nova configuração

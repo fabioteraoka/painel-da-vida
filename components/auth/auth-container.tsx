@@ -46,7 +46,7 @@ export function AuthContainer({
   const [loginError, setLoginError] = useState<string | null>(null);
 
   // Setup state
-  const [setupSecret, setSetupSecret] = useState("painel-setup-2026");
+  const [setupSecret, setSetupSecret] = useState("");
   const [setupEmail, setSetupEmail] = useState(suggestedEmail || "fteraoka72@gmail.com");
   const [setupName, setSetupName] = useState(suggestedName || "Fábio Teraoka");
   const [setupPassword, setSetupPassword] = useState("");
@@ -385,12 +385,14 @@ export function AuthContainer({
                   required
                   value={setupSecret}
                   onChange={(e) => setSetupSecret(e.target.value)}
-                  placeholder="painel-setup-2026"
-                  className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-xs text-slate-900 outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
+                  placeholder="Cole aqui a chave gerada no .env.local"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-xs font-mono text-slate-900 outline-none focus:border-[#00875f] dark:border-[#2e3f37] dark:bg-[#1e2b26] dark:text-[#e6ede9] dark:focus:border-[#00b37e]"
                 />
               </div>
               <p className="mt-1 text-[10px] text-slate-400 dark:text-[#95a89f]">
-                No preview do AI Studio, utilize <code>painel-setup-2026</code>.
+                Chave aleatória de uso único definida no arquivo <code>.env.local</code> do servidor.
               </p>
             </div>
 
