@@ -198,37 +198,31 @@ export function EmailsSection({
             Não foi possível carregar os e-mails. Verifique as contas conectadas.
           </div>
         ) : filteredMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center text-slate-400 dark:text-[#95a89f]">
-            <Mail size={32} className="opacity-40" />
-            <p className="mt-2 text-xs font-medium">Nenhum e-mail para este filtro no momento.</p>
-            {onOpenGoogleConnectModal && (
-              <button
-                type="button"
-                onClick={onOpenGoogleConnectModal}
-                className="mt-3.5 inline-flex items-center gap-2 rounded-xl bg-[#00875f] px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-[#015f43] dark:bg-[#00b37e] dark:hover:bg-[#00c98e] dark:text-[#00291d]"
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
-                  <path
-                    fill="#ffffff"
-                    d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17Z"
-                  />
-                  <path
-                    fill="#ffffff"
-                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24Z"
-                  />
-                  <path
-                    fill="#ffffff"
-                    d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.16 0 10.02 0 12s.45 3.84 1.25 5.42l4.03-3.15Z"
-                  />
-                  <path
-                    fill="#ffffff"
-                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
-                  />
-                </svg>
-                <span>Conectar Conta de E-mail</span>
-              </button>
-            )}
-          </div>
+          accounts.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs dark:border-[#2e3f37] dark:bg-[#1e2b26]/30">
+              <Mail size={28} className="mx-auto text-slate-400 opacity-60 mb-2" />
+              <p className="font-semibold text-slate-700 dark:text-[#e6ede9]">
+                Integração Google não configurada
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-[#95a89f] max-w-sm mx-auto">
+                A sincronização de e-mails do Gmail é opcional. Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente para ativar a leitura de mensagens, ou continue utilizando tarefas, faturas e monitor de preços normalmente.
+              </p>
+              {onOpenGoogleConnectModal && (
+                <button
+                  type="button"
+                  onClick={onOpenGoogleConnectModal}
+                  className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-[#2e3f37] dark:bg-[#17211d] dark:text-[#e6ede9]"
+                >
+                  <span>Gerenciar Contas Conectadas</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 text-center text-slate-400 dark:text-[#95a89f]">
+              <Mail size={32} className="opacity-40" />
+              <p className="mt-2 text-xs font-medium">Nenhum e-mail para este filtro no momento.</p>
+            </div>
+          )
         ) : (
           <div className="space-y-2.5">
             {filteredMessages.map((msg) => {

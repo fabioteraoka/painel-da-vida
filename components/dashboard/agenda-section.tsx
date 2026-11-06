@@ -124,10 +124,22 @@ export function AgendaSection({
             Não foi possível carregar a agenda. Tente atualizar.
           </div>
         ) : filteredEvents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center text-slate-400 dark:text-[#95a89f]">
-            <CalendarDays size={32} className="opacity-40" />
-            <p className="mt-2 text-xs font-medium">Nenhum compromisso marcado para este filtro hoje.</p>
-          </div>
+          accounts.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs dark:border-[#2e3f37] dark:bg-[#1e2b26]/30">
+              <CalendarDays size={28} className="mx-auto text-slate-400 opacity-60 mb-2" />
+              <p className="font-semibold text-slate-700 dark:text-[#e6ede9]">
+                Integração Google não configurada
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-[#95a89f] max-w-sm mx-auto">
+                A agenda do Google Calendar é opcional. Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET para sincronizar compromissos, ou continue utilizando tarefas e faturas normalmente.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 text-center text-slate-400 dark:text-[#95a89f]">
+              <CalendarDays size={32} className="opacity-40" />
+              <p className="mt-2 text-xs font-medium">Nenhum compromisso marcado para este filtro hoje.</p>
+            </div>
+          )
         ) : (
           <div className="space-y-2.5">
             {filteredEvents.map((ev) => {

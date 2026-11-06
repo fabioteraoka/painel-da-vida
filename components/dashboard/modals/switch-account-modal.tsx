@@ -28,7 +28,7 @@ export function SwitchAccountModal({
 
   if (!isOpen) return null;
 
-  const handleSwitch = async (targetEmail: string, targetName?: string) => {
+  const handleSwitch = async (targetEmail: string, _targetName?: string) => {
     if (!targetEmail.includes("@")) {
       setError("Por favor, digite um endereço de e-mail válido.");
       return;
@@ -37,22 +37,13 @@ export function SwitchAccountModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/auth/switch-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: targetEmail, name: targetName }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Erro ao trocar login.");
-      }
-
-      onClose();
-      onAccountSwitched();
+      // Por segurança, encerra a sessão ativa e redireciona para a página de login
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push(`/login?email=${encodeURIComponent(targetEmail)}`);
       router.refresh();
-    } catch (err: any) {
-      setError(err?.message || "Não foi possível alternar para este e-mail.");
+    } catch {
+      router.push("/login");
+    } finally {
       setLoading(false);
     }
   };
@@ -60,7 +51,7 @@ export function SwitchAccountModal({
   const handleLogout = async () => {
     setLoading(true);
     try {
-      await fetch("/api/auth/switch-user", { method: "DELETE" });
+      await fetch("/api/auth/logout", { method: "POST" });
       router.push("/login");
       router.refresh();
     } finally {

@@ -1,5 +1,8 @@
+import { Suspense } from "react";
 import { Target } from "lucide-react";
 import { LoginForm } from "@/components/auth/login-form";
+
+export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
   return (
@@ -14,16 +17,24 @@ export default function LoginPage() {
             Painel da Vida
           </h1>
           <p className="mt-1.5 text-xs text-slate-500 dark:text-[#95a89f]">
-            Acesse seu painel com seu e-mail pessoal, corporativo ou de trabalho.
+            Acesso seguro próprio com e-mail e senha protegidos por Argon2id.
           </p>
         </div>
 
         <div className="mt-6">
-          <LoginForm />
+          <Suspense
+            fallback={
+              <div className="py-8 text-center text-xs text-slate-400">
+                Carregando login seguro...
+              </div>
+            }
+          >
+            <LoginForm />
+          </Suspense>
         </div>
 
         <p className="mt-6 text-center text-xs leading-5 text-slate-400 dark:text-[#95a89f]/80">
-          Você pode alternar de e-mail a qualquer momento diretamente pelo painel.
+          Suas tarefas, contas manuais e monitor de preços funcionam independentemente do Google.
         </p>
       </div>
     </main>

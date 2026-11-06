@@ -50,13 +50,6 @@ export function GoogleConnectModal({
         throw new Error(data.error || "Erro ao conectar conta Google.");
       }
 
-      // Also set active session cookie so the dashboard immediately switches to this user
-      await fetch("/api/auth/switch-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
-      });
-
       setSuccessMessage(`Conta ${email} conectada com sucesso! E-mails e agenda sincronizados.`);
       onConnected();
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { DashboardHeader } from "./dashboard-header";
 import { MetricCards } from "./metric-cards";
 import { AgendaSection } from "./agenda-section";
@@ -26,7 +27,16 @@ import {
   type PaymentAccountApi,
 } from "./types";
 
-export default function Dashboard() {
+interface DashboardProps {
+  sessionUser?: {
+    id: string;
+    email: string;
+    name?: string | null;
+  };
+}
+
+export default function Dashboard({ sessionUser }: DashboardProps = {}) {
+  const router = useRouter();
   // Theme state
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== "undefined") {
@@ -89,8 +99,8 @@ export default function Dashboard() {
 
   // Active User session info
   const [activeUser, setActiveUser] = useState<{ email: string; name: string }>({
-    email: "fteraoka72@gmail.com",
-    name: "Fábio Teraoka",
+    email: sessionUser?.email || "fteraoka72@gmail.com",
+    name: sessionUser?.name || "Fábio Teraoka",
   });
 
   // Menus
@@ -264,11 +274,13 @@ export default function Dashboard() {
             name: data.user.name || "Fábio Teraoka",
           });
         }
+      } else if (res.status === 401) {
+        router.push("/login");
       }
     } catch {
       // Fallback
     }
-  }, []);
+  }, [router]);
 
   // Refresh All Data
   const refreshAll = useCallback(async () => {

@@ -37,12 +37,6 @@ export function getGoogleOAuthCredentials(): { clientId: string; clientSecret: s
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET;
 
   if (!clientId || !clientSecret) {
-    if (isDemoMode) {
-      return {
-        clientId: clientId || "demo-google-client-id",
-        clientSecret: clientSecret || "demo-google-client-secret",
-      };
-    }
     return null;
   }
 
@@ -239,46 +233,8 @@ export async function startGoogleIntegration(
   );
 
   if (!hasConfiguredCredentials) {
-    // Quando as credenciais de OAuth ainda não estão ativas na Vercel/GCP,
-    // conecta a conta informada de forma resiliente preservando a identidade do usuário
-    const targetEmail =
-      reqUrl.searchParams.get("email") ||
-      (accountTypeParam === "WORK"
-        ? "fabio@empresa.com.br"
-        : session.user.email || "fteraoka1@gmail.com");
-
-    const targetType: ConnectedAccountType =
-      accountTypeParam || (targetEmail.toLowerCase().endsWith("@gmail.com") ? "PERSONAL" : "WORK");
-
-    const targetLabel =
-      reqUrl.searchParams.get("label") ||
-      (targetType === "WORK" ? "Google — profissional" : "Google — pessoal");
-
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (user) {
-      await upsertConnectedAccount({
-        userId: user.id,
-        provider: "GOOGLE",
-        email: targetEmail,
-        name:
-          targetType === "WORK"
-            ? (session.user.name ? `${session.user.name} (Trabalho)` : "Fábio Teraoka (Trabalho)")
-            : (session.user.name || "Fábio Teraoka"),
-        label: targetLabel,
-        accountType: targetType,
-        accessToken: "simulated-token-" + Date.now(),
-        refreshToken: "simulated-refresh-" + Date.now(),
-        expiresIn: 3600,
-      });
-    }
-
     const target = new URL("/", request.url);
-    target.searchParams.set("integration", "google");
-    target.searchParams.set("connected", "1");
-    target.searchParams.set("account", targetEmail);
+    target.searchParams.set("google_error", "not_configured");
     return NextResponse.redirect(target);
   }
 

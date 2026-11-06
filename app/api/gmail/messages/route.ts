@@ -275,14 +275,39 @@ export async function GET(req: NextRequest) {
         ? activeAccounts.filter((a) => a.id === requestedAccountId)
         : activeAccounts;
 
+    const hasGoogleCredentials = Boolean(
+      (process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID) &&
+      (process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET)
+    );
+    const isExplicitDevDemo =
+      process.env.NODE_ENV !== "production" &&
+      (process.env.DEMO_MODE === "true" || process.env.NEXT_PUBLIC_DEMO_MODE === "true");
+
+    if (!hasGoogleCredentials && !isExplicitDevDemo) {
+      return NextResponse.json(
+        {
+          connected: false,
+          configured: false,
+          reason: "google_not_configured",
+          message: "Integração Google não configurada.",
+          accounts: allAccounts.map(toSafeAccount),
+          messages: [],
+        },
+        { status: 200 },
+      );
+    }
+
     // Se não houver contas conectadas ativas
     if (targetAccounts.length === 0) {
-      if (!isDemoMode && allAccounts.length === 0) {
+      if (!isExplicitDevDemo) {
         return NextResponse.json(
           {
             connected: false,
-            reason: "no_accounts",
-            error: "Nenhuma conta de e-mail conectada no momento. Conecte sua conta Google ou outro e-mail para carregar as mensagens.",
+            configured: hasGoogleCredentials,
+            reason: hasGoogleCredentials ? "no_accounts" : "google_not_configured",
+            message: hasGoogleCredentials
+              ? "Nenhuma conta de e-mail conectada no momento. Conecte sua conta em 'Contas Conectadas' para carregar as mensagens."
+              : "Integração Google não configurada.",
             accounts: allAccounts.map(toSafeAccount),
             messages: [],
           },

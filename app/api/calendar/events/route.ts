@@ -47,14 +47,40 @@ export async function GET(req: NextRequest) {
       return d.toISOString();
     };
 
+    const hasGoogleCredentials = Boolean(
+      (process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID) &&
+      (process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET)
+    );
+    const isExplicitDevDemo =
+      process.env.NODE_ENV !== "production" &&
+      (process.env.DEMO_MODE === "true" || process.env.NEXT_PUBLIC_DEMO_MODE === "true");
+
+    if (!hasGoogleCredentials && !isExplicitDevDemo) {
+      return NextResponse.json(
+        {
+          connected: false,
+          configured: false,
+          reason: "google_not_configured",
+          message: "Integração Google não configurada.",
+          accounts: allAccounts.map(toSafeAccount),
+          items: [],
+        },
+        { status: 200 },
+      );
+    }
+
     if (targetAccounts.length === 0) {
-      if (!isDemoMode && allAccounts.length === 0) {
+      if (!isExplicitDevDemo) {
         return NextResponse.json(
           {
             connected: false,
+            configured: hasGoogleCredentials,
+            reason: hasGoogleCredentials ? "no_accounts" : "google_not_configured",
+            message: hasGoogleCredentials
+              ? "Nenhuma conta conectada para consultar a agenda."
+              : "Integração Google não configurada.",
             accounts: allAccounts.map(toSafeAccount),
             items: [],
-            error: "Nenhuma conta conectada para consultar a agenda.",
           },
           { status: 200 },
         );
