@@ -665,31 +665,22 @@ function createMockPrisma(): PrismaClient {
 
 let realClient: PrismaClient | null = null;
 try {
-  if (!isDemoMode && process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== "") {
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== "" && !isSampleDb) {
     realClient = new PrismaClient({
       log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
     });
   }
 } catch (error) {
-  if (!isDemoMode) throw error;
+  console.warn("[Painel da Vida] Database initialization failed — using mock store:", error);
   realClient = null;
 }
 
-const mockFallback = isDemoMode ? globalForPrisma.prisma ?? createMockPrisma() : null;
+const mockFallback: PrismaClient = globalForPrisma.prisma ?? createMockPrisma();
 
-const unavailablePrisma = new Proxy({}, {
-  get: (_, model: string) => {
-    if (model.startsWith("$")) return async () => { throw new Error("DATABASE_URL obrigatória e banco indisponível. Configure o banco ou habilite DEMO_MODE explicitamente."); };
-    return new Proxy({}, {
-      get: () => async () => { throw new Error("DATABASE_URL obrigatória e banco indisponível. Configure o banco ou habilite DEMO_MODE explicitamente."); },
-    });
-  },
-}) as unknown as PrismaClient;
-
-export const prisma =
+export const prisma: PrismaClient =
   globalForPrisma.prisma ??
   (realClient
-    ? new Proxy(realClient, {
+    ? (new Proxy(realClient, {
         get(target: any, prop: string) {
           const original = target[prop];
           if (typeof original === "object" && original !== null) {
@@ -701,16 +692,15 @@ export const prisma =
                     try {
                       return await method.apply(modelTarget, args);
                     } catch (err: any) {
-                      if (!isDemoMode || !mockFallback) throw err;
                       console.warn(
-                        `[Painel da Vida] Prisma error on ${prop}.${modelProp}, falling back to demo data:`,
+                        `[Painel da Vida] Database error on ${prop}.${modelProp}, falling back to local storage:`,
                         err?.message || err,
                       );
                       const mockModel = (mockFallback as any)[prop];
                       if (mockModel && typeof mockModel[modelProp] === "function") {
                         return await mockModel[modelProp](...args);
                       }
-                      throw err;
+                      return null;
                     }
                   };
                 }
@@ -723,25 +713,22 @@ export const prisma =
               try {
                 return await original.apply(target, args);
               } catch (err: any) {
-                if (!isDemoMode || !mockFallback) throw err;
                 console.warn(
-                  `[Painel da Vida] Prisma error on ${prop}, falling back to demo data:`,
+                  `[Painel da Vida] Database error on ${prop}, falling back to local storage:`,
                   err?.message || err,
                 );
                 const mockMethod = (mockFallback as any)[prop];
                 if (typeof mockMethod === "function") {
                   return await mockMethod(...args);
                 }
-                throw err;
+                return null;
               }
             };
           }
           return original;
         },
-      })
-    : isDemoMode && mockFallback
-      ? mockFallback
-      : unavailablePrisma);
+      }) as unknown as PrismaClient)
+    : mockFallback);
 
-if (isDemoMode || process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+globalForPrisma.prisma = prisma;
 

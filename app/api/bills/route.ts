@@ -95,6 +95,7 @@ export async function POST(request: Request) {
     const newBill = await prisma.bill.create({
       data: {
         userId: user.id,
+        sender: body.sender || "manual@paineldavida.local",
         merchant: body.merchant || body.subject,
         subject: body.subject || body.merchant,
         amount,
